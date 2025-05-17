@@ -21,101 +21,51 @@
         display: flex;
         align-items: flex-start;
         gap: 2rem;
-        margin-bottom: 2rem;
+        margin-bottom: 1.5rem;
+      }
+      .bio-flex p {
+        flex-grow: 1;
+        margin-bottom: 0;
       }
       .bio-flex img {
         max-width: 180px;
         border-radius: 8px;
         flex-shrink: 0;
       }
-      .research-item {
-        margin-bottom: 1.5rem;
+      section h2 {
+        margin-top: 2rem;
+        margin-bottom: 1rem;
       }
-      .research-item h3 {
-        margin-bottom: 0.25rem;
-      }
-      .research-item p {
-        margin-bottom: 0.25rem;
-      }
-      .research-item ul {
-        list-style-position: inside; /* Or outside, depending on preference */
-        padding-left: 1.5rem; /* Adjust as needed */
-      }
-       .research-item ul li {
-        margin-bottom: 0.2rem;
-       }
     </style>
   </head>
   <body>
     <main>
       <h1>Ethan Chen</h1>
+
       <div class="bio-flex">
-        <p>Hi! I'm a rising third-year mathematics undergraduate at the Georgia Institute of Technology. My research interests include differential geometry, manifold diffusion, and machine learning. I also enjoy photography and bouldering. This summer, I am participating in a Research Experience for Undergraduates (REU) at Williams College.</p>
+        <p>
+          Hi! I'm a rising third-year mathematics undergraduate at the Georgia Institute of Technology. My research interests include differential geometry, manifold diffusion, and machine learning. I am fortunate to work with Prof. <a href="https://amirmohan.github.io/" target="_blank">Amirali Aghazadeh</a> at Georgia Tech. Outside of math, I enjoy <a href="https://www.instagram.com/notaprimelens/" target="_blank">photography</a> and bouldering. This summer, I am participating in a Research Experience for Undergraduates (REU) at Williams College.
+        </p>
         <img src="headshot.jpg" alt="Ethan Chen headshot">
       </div>
 
-      <section id="research">
-        <h2>Research Experience</h2>
-        
-        <div class="research-item">
-          <h3>Machine Learning Researcher (Diffusion Models on Riemannian Manifolds)</h3>
-          <p><em>June 2025 -- Present</em></p>
-          <ul>
-            <li>Investigating algorithmic and theoretical foundations of diffusion models on general Riemannian manifolds, with an emphasis on applications to Lie groups, by employing advanced techniques from optimal transport and differential geometry.</li>
-          </ul>
-        </div>
-
-        <div class="research-item">
-          <h3>Machine Learning Researcher (Discrete Diffusion Models)</h3>
-          <p><em>Feb 2025 -- Present</em></p>
-          <ul>
-            <li>Developing and implementing discrete diffusion models for structured data, including sequences and natural language, with applications to protein modeling.</li>
-            <li>Engineered novel predictor-corrector sampling strategies, inspired by k-Gillespie methods, to enhance convergence and generation quality.</li>
-          </ul>
-        </div>
-
-        <div class="research-item">
-          <h3>Mathematics Researcher (Cartan–Hadamard Conjecture)</h3>
-          <p><em>May 2024 -- Present</em></p>
-          <ul>
-            <li>Advancing research on the Cartan–Hadamard conjecture in CAT(0) spaces by developing novel differential geometry techniques to analyze curvature bounds in non-smooth metric spaces, addressing fundamental challenges in geometric analysis.</li>
-          </ul>
-        </div>
-        
-        <div class="research-item">
-          <h3>NLP Researcher (Transformer Fine-tuning)</h3>
-          <p><em>Feb 2024 -- Dec 2024</em></p>
-          <ul>
-            <li>Engineered robust data pipelines for large-scale T5 model training, efficiently processing over 500,000 text pairs and incorporating custom semantic similarity metrics for enhanced model performance.</li>
-            <li>Co-authored research submitted to EMNLP on optimizing transformer fine-tuning, achieving a 12% BLEU score improvement through novel attention mechanism modifications.</li>
-          </ul>
-        </div>
-
-        <div class="research-item">
-          <h3>Optimization Lead (HyTech Racing - Formula SAE)</h3>
-          <p><em>Jan 2025 -- Present</em></p>
-          <ul>
-            <li>Migrated MATLAB data pipeline to Python, implementing real-time telemetry validation, reducing processing errors by 18%.</li>
-            <li>Developed ML models for power distribution optimization, achieving 15% performance gain through ensemble gradient boosting techniques.</li>
-          </ul>
-        </div>
-
-        <div class="research-item">
-          <h3>Artificial Intelligence Researcher (Scale AI)</h3>
-          <p><em>Feb 2024 -- Present</em></p>
-          <ul>
-            <li>Designed olympiad-level math problems focusing on combinatorial optimization and stochastic processes for LLM training.</li>
-          </ul>
-        </div>
+      <section>
+        <h2>Research</h2>
+        <p>
+          My research spans several areas within mathematics and machine learning. I investigate the algorithmic and theoretical foundations of diffusion models on general Riemannian manifolds, with an emphasis on applications to Lie groups, by employing advanced techniques from optimal transport and differential geometry. I also develop and implement discrete diffusion models for structured data, such as sequences and natural language, with applications to protein modeling. This includes engineering novel predictor-corrector sampling strategies inspired by k-Gillespie methods to enhance convergence and generation quality. 
+          <br><br>
+          In differential geometry, I work on advancing research on the Cartan–Hadamard conjecture in CAT(0) spaces by developing novel techniques to analyze curvature bounds in non-smooth metric spaces. My experience also includes NLP research, where I engineered robust data pipelines for large-scale T5 model training and co-authored research on optimizing transformer fine-tuning, achieving significant BLEU score improvements through novel attention mechanism modifications. Additionally, I apply machine learning in practical settings, such as optimizing vehicle performance for HyTech Racing (Formula SAE) and designing olympiad-level math problems for LLM training at Scale AI.
+        </p>
       </section>
 
-      <section id="contact">
+      <section>
         <h2>Contact</h2>
-        <p>echen347 [at] gatech [dot] edu / 
-          <a href="https://www.linkedin.com/ethanc27/" target="_blank">linkedin</a> / 
+        <p>echen347 [at] gatech [dot] edu /
+          <a href="https://www.linkedin.com/in/ethanc27/" target="_blank">linkedin</a> /
           <a href="cv.pdf" target="_blank">cv</a>
         </p>
       </section>
+
     </main>
     <footer>
       <p>&copy; 2025 Ethan Chen. All rights reserved. Last updated: 05/17/2025</p>
