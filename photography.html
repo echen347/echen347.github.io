@@ -49,8 +49,19 @@
       }
       /* Lightbox styles */
       .lightbox { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.92); justify-content: center; align-items: center; }
-      .lightbox-content { position: relative; max-width: 90vw; max-height: 90vh; display: flex; flex-direction: column; align-items: center; }
-      .lightbox-content img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 4px; }
+      .lightbox-content {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+      }
+      .lightbox-content img {
+        max-width: 90vw;
+        max-height: 85vh; /* Leave space for caption */
+        object-fit: contain; /* The definitive rule */
+        border-radius: 4px;
+      }
       .lightbox-caption { color: #ccc; margin-top: 1rem; font-family: monospace; text-align: center; font-size: 0.9em; }
       .close-lightbox { position: absolute; top: 15px; right: 35px; color: #f1f1f1; font-size: 40px; font-weight: bold; cursor: pointer; transition: color 0.2s; }
       .close-lightbox:hover { color: #ccc; }
@@ -61,7 +72,7 @@
     <main>
       <p><a href="/">Back to home</a></p>
       <h1>Photography</h1>
-      <p>A selection of my favorite shots. My full portfolio can be found on <a href="https://www.instagram.com/notaprimelens/" target="_blank">Instagram</a>.</p>
+      <p>A selection of my favorite shots. More on <a href="https://www.instagram.com/notaprimelens/" target="_blank">Instagram</a>.</p>
       
       <div class="photo-gallery" id="photo-gallery">
         <div class="loading-placeholder">Loading gallery...</div>
