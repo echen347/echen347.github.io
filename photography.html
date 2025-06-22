@@ -16,24 +16,26 @@
       .photo-gallery {
         display: flex;
         flex-direction: column;
-        gap: 0.75rem; /* Slightly tighter gap */
+        gap: 1rem;
         opacity: 0;
         transition: opacity 0.6s ease-in-out;
       }
       .photo-row {
         display: flex;
-        gap: 0.75rem;
+        gap: 1rem;
       }
       .photo-row a {
+        flex-shrink: 1; /* Allow items to shrink to fit */
+        flex-grow: 1; /* Allow items to grow to fit */
         line-height: 0;
         cursor: pointer;
         overflow: hidden;
         border-radius: 8px;
       }
       .photo-row img {
-        width: auto; /* Width is determined by height and aspect ratio */
-        height: 100%; /* Height is controlled by the JS via the container */
-        vertical-align: middle; /* Fixes potential alignment issues */
+        width: 100%; /* Image fills its 'a' container */
+        height: auto;
+        vertical-align: middle;
         transition: transform 0.3s ease, filter 0.3s ease;
       }
       .photo-row a:hover img {
@@ -98,7 +100,6 @@
 
     <script>
       document.addEventListener('DOMContentLoaded', async function() {
-        // Only define the source files. EXIF data will be read automatically.
         const photoSources = [
           { src: 'photography/korean-temple-roof.jpg', alt: 'Symmetrical view of a traditional Korean temple roof' },
           { src: 'photography/reclining-buddha-fukuoka.jpg', alt: 'A large, golden reclining Buddha statue seen through prayer slips' },
@@ -130,11 +131,10 @@
           });
         }
 
-        async function createJustifiedLayout() {
-          gallery.innerHTML = '<div class="loading-placeholder">Recalculating layout...</div>';
-          const idealRowHeight = 320;
-          const gap = 12; // Corresponds to 0.75rem
+        async function createRuleBasedLayout() {
+          gallery.innerHTML = '<div class="loading-placeholder">Curating layout...</div>';
           const containerWidth = gallery.clientWidth;
+          const gap = 16; // 1rem
 
           const photosWithData = await Promise.all(photoSources.map(p => 
             new Promise(async (resolve, reject) => {
@@ -149,36 +149,50 @@
           ));
 
           gallery.innerHTML = '';
-          let currentRow = [];
-          let currentRowRatio = 0;
-
-          photosWithData.forEach((photo, index) => {
-            currentRow.push(photo);
-            currentRowRatio += photo.ratio;
-
-            const rowWidthWithoutGaps = containerWidth - (currentRow.length - 1) * gap;
-            const finalRowHeight = rowWidthWithoutGaps / currentRowRatio;
+          
+          function createRow(photosInRow) {
+            const rowDiv = document.createElement('div');
+            rowDiv.className = 'photo-row';
             
-            if (finalRowHeight < idealRowHeight || index === photosWithData.length - 1) {
-              const rowDiv = document.createElement('div');
-              rowDiv.className = 'photo-row';
-              rowDiv.style.height = `${finalRowHeight}px`; // Set height on the row
+            const totalRatio = photosInRow.reduce((acc, p) => acc + p.ratio, 0);
+            const rowHeight = (containerWidth - (photosInRow.length - 1) * gap) / totalRatio;
+            
+            photosInRow.forEach(p => {
+              const link = document.createElement('a');
+              link.style.width = `${p.ratio * rowHeight}px`;
+              link.onclick = () => openLightbox(p);
               
-              currentRow.forEach(p => {
-                const link = document.createElement('a');
-                link.onclick = () => openLightbox(p);
-                const imgEl = document.createElement('img');
-                imgEl.src = p.src;
-                imgEl.alt = p.alt;
-                link.appendChild(imgEl);
-                rowDiv.appendChild(link);
-              });
+              const imgEl = document.createElement('img');
+              imgEl.src = p.src;
+              imgEl.alt = p.alt;
               
-              gallery.appendChild(rowDiv);
-              currentRow = [];
-              currentRowRatio = 0;
+              link.appendChild(imgEl);
+              rowDiv.appendChild(link);
+            });
+            gallery.appendChild(rowDiv);
+          }
+          
+          let i = 0;
+          while (i < photosWithData.length) {
+            const photo1 = photosWithData[i];
+            // Rule: Panoramic images get their own row
+            if (photo1.ratio > 2.2) {
+              createRow([photo1]);
+              i += 1;
+              continue;
             }
-          });
+            
+            const photo2 = photosWithData[i + 1];
+            // Rule: Max 2 images per row
+            if (photo2) {
+              createRow([photo1, photo2]);
+              i += 2;
+            } else {
+              // Handle the last image if it's on its own
+              createRow([photo1]);
+              i += 1;
+            }
+          }
           gallery.style.opacity = 1;
         }
 
@@ -195,14 +209,14 @@
           document.body.classList.remove('lightbox-open');
         }
 
-        await createJustifiedLayout();
+        await createRuleBasedLayout();
         closeBtn.addEventListener('click', closeLightbox);
         lightbox.addEventListener('click', (e) => { if (e.target === lightbox) closeLightbox(); });
 
         let resizeTimer;
         window.addEventListener('resize', () => {
           clearTimeout(resizeTimer);
-          resizeTimer = setTimeout(createJustifiedLayout, 150);
+          resizeTimer = setTimeout(createRuleBasedLayout, 150);
         });
       });
     </script>
