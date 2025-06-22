@@ -9,59 +9,40 @@
     <link rel="icon" href="./favicon.ico" type="image/x-icon">
     <style>
       .photo-gallery {
-        display: grid;
+        display: flex;
+        flex-direction: column;
         gap: 1rem;
-        /* Create a fine-grained grid. The 'dense' flow will do the rest. */
-        grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
-        grid-auto-rows: 100px;
-        grid-auto-flow: dense; /* The magic for packing items */
         transition: opacity 0.5s ease-in-out;
         opacity: 0; /* Start hidden, fade in with JS */
       }
-      .photo-item {
+      .photo-row {
+        display: flex;
+        gap: 1rem;
+      }
+      .photo-row a {
+        flex-grow: 1; /* Allow items to grow based on aspect ratio */
         overflow: hidden;
         border-radius: 8px;
         cursor: pointer;
       }
-      .photo-item img {
+      .photo-row img {
         width: 100%;
         height: 100%;
-        object-fit: cover;
+        object-fit: cover; /* This works because JS is setting the perfect container dimensions */
+        vertical-align: middle;
         transition: transform 0.3s, filter 0.3s;
       }
-      .photo-item:hover img {
+      .photo-row a:hover img {
         transform: scale(1.05);
         filter: brightness(0.85);
       }
 
-      /* Classes dynamically assigned by JavaScript based on aspect ratio */
-      .photo-item.landscape {
-        grid-column: span 2;
-      }
-      .photo-item.portrait {
-        grid-row: span 2;
-      }
-      .photo-item.big {
-        grid-column: span 2;
-        grid-row: span 2;
-      }
-
-      /* Lightbox styles (mostly unchanged) */
-      .lightbox {
-        display: none; position: fixed; z-index: 1000; left: 0; top: 0;
-        width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.9);
-        justify-content: center; align-items: center;
-      }
-      .lightbox-content {
-        position: relative; max-width: 90vw; max-height: 85vh;
-        display: flex; flex-direction: column; align-items: center;
-      }
+      /* Lightbox styles */
+      .lightbox { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.9); justify-content: center; align-items: center; }
+      .lightbox-content { position: relative; max-width: 90vw; max-height: 85vh; display: flex; flex-direction: column; align-items: center; }
       .lightbox-content img { max-width: 100%; max-height: 100%; border-radius: 4px; }
       .lightbox-caption { color: #ccc; margin-top: 1rem; font-family: monospace; text-align: center; }
-      .close-lightbox {
-        position: absolute; top: 15px; right: 35px; color: #f1f1f1;
-        font-size: 40px; font-weight: bold; cursor: pointer;
-      }
+      .close-lightbox { position: absolute; top: 15px; right: 35px; color: #f1f1f1; font-size: 40px; font-weight: bold; cursor: pointer; }
       footer { margin-top: 2rem; }
     </style>
   </head>
@@ -72,7 +53,7 @@
       <p>A selection of my favorite shots. My full portfolio can be found on <a href="https://www.instagram.com/notaprimelens/" target="_blank">Instagram</a>.</p>
       
       <div class="photo-gallery" id="photo-gallery">
-        <!-- Photos dynamically loaded here -->
+        <!-- Dynamically generated justified gallery -->
       </div>
 
       <p><a href="/">Back to home</a></p>
@@ -93,7 +74,7 @@
     </footer>
 
     <script>
-      document.addEventListener('DOMContentLoaded', function() {
+      document.addEventListener('DOMContentLoaded', async function() {
         const photos = [
           { src: 'photography/korean-temple-roof.jpg', alt: 'Symmetrical view of a traditional Korean temple roof', camera: 'SONY ILCE-7RM4', lens: 'FE 24-70mm F2.8 GM', focalLength: '70mm', shutterSpeed: '1/400s', aperture: 'f/5.6', iso: '100' },
           { src: 'photography/reclining-buddha-fukuoka.jpg', alt: 'A large, golden reclining Buddha statue seen through prayer slips', camera: 'SONY ILCE-7RM4', lens: 'FE 85mm F1.8', focalLength: '85mm', shutterSpeed: '1/100s', aperture: 'f/1.8', iso: '200' },
@@ -109,54 +90,74 @@
         const lightboxCaption = document.getElementById('lightbox-caption');
         const closeBtn = document.getElementById('close-lightbox');
 
-        const promises = photos.map(photoData => {
-          return new Promise((resolve, reject) => {
-            const img = new Image();
-            img.src = photoData.src;
-            img.onload = () => {
-              const aspectRatio = img.naturalWidth / img.naturalHeight;
-              const item = document.createElement('figure');
-              item.className = 'photo-item';
-              
-              // Assign class based on aspect ratio
-              if (aspectRatio > 1.4) item.classList.add('landscape');
-              else if (aspectRatio < 0.8) item.classList.add('portrait');
-              // Optional: Add a 'big' class for particularly large or important photos
-              // if (img.naturalWidth > 2000) item.classList.add('big');
+        // --- Justified Layout Algorithm ---
+        async function createJustifiedLayout() {
+          const idealRowHeight = 300; // Adjust for bigger/smaller images on average
+          const gap = 16; // Corresponds to 1rem in the CSS
+          const containerWidth = gallery.clientWidth;
 
-              const imgElement = document.createElement('img');
-              imgElement.src = photoData.src;
-              imgElement.alt = photoData.alt;
+          const photosWithRatios = await Promise.all(photos.map(p => 
+            new Promise((resolve, reject) => {
+              const img = new Image();
+              img.onload = () => resolve({ ...p, ratio: img.width / img.height });
+              img.onerror = reject;
+              img.src = p.src;
+            })
+          ));
+
+          let currentRow = [];
+          let currentRowRatio = 0;
+
+          photosWithRatios.forEach((photo, index) => {
+            currentRow.push(photo);
+            currentRowRatio += photo.ratio;
+
+            // Calculate the height of the current row if it were to be rendered now
+            const potentialRowHeight = (containerWidth - (currentRow.length - 1) * gap) / currentRowRatio;
+
+            // If the row is "full enough" (potential height is getting small) or it's the last photo, render the row
+            if (potentialRowHeight < idealRowHeight || index === photosWithRatios.length - 1) {
+              const rowDiv = document.createElement('div');
+              rowDiv.className = 'photo-row';
+              rowDiv.style.height = `${potentialRowHeight}px`;
+
+              currentRow.forEach(p => {
+                const link = document.createElement('a');
+                link.style.flexGrow = p.ratio; // Key for sizing
+                link.style.width = `${p.ratio * potentialRowHeight}px`; // Explicit width
+                link.onclick = () => openLightbox(p);
+                
+                const img = document.createElement('img');
+                img.src = p.src;
+                img.alt = p.alt;
+                
+                link.appendChild(img);
+                rowDiv.appendChild(link);
+              });
               
-              item.appendChild(imgElement);
-              item.addEventListener('click', () => openLightbox(photoData));
-              resolve(item);
-            };
-            img.onerror = reject;
+              gallery.appendChild(rowDiv);
+              
+              // Reset for the next row
+              currentRow = [];
+              currentRowRatio = 0;
+            }
           });
-        });
 
-        Promise.all(promises).then(items => {
-          items.forEach(item => gallery.appendChild(item));
-          gallery.style.opacity = 1; // Fade in the gallery
-        }).catch(err => {
-          console.error("Could not load images for the gallery.", err);
-        });
+          gallery.style.opacity = 1;
+        }
 
+        await createJustifiedLayout();
+
+        // Lightbox functionality
         function openLightbox(photo) {
           lightbox.style.display = 'flex';
           lightboxImg.src = photo.src;
           lightboxCaption.textContent = `${photo.camera} | ${photo.lens} | ${photo.focalLength} | ${photo.shutterSpeed} | ${photo.aperture} | ISO ${photo.iso}`;
         }
 
-        function closeLightbox() {
-          lightbox.style.display = 'none';
-        }
-
+        function closeLightbox() { lightbox.style.display = 'none'; }
         closeBtn.addEventListener('click', closeLightbox);
-        lightbox.addEventListener('click', (e) => {
-          if (e.target === lightbox) closeLightbox();
-        });
+        lightbox.addEventListener('click', (e) => { if (e.target === lightbox) closeLightbox(); });
       });
     </script>
 
