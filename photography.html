@@ -10,9 +10,7 @@
     <!-- EXIF Reader Library -->
     <script src="https://cdn.jsdelivr.net/npm/exif-js"></script>
     <style>
-      body.lightbox-open {
-        overflow: hidden;
-      }
+      body.lightbox-open { overflow: hidden; }
       .photo-gallery {
         display: flex;
         flex-direction: column;
@@ -24,51 +22,32 @@
         display: flex;
         gap: 1rem;
       }
+      .photo-row.is-centered {
+        justify-content: center;
+      }
       .photo-row a {
-        flex-shrink: 1; /* Allow items to shrink to fit */
-        flex-grow: 1; /* Allow items to grow to fit */
         line-height: 0;
         cursor: pointer;
         overflow: hidden;
         border-radius: 8px;
       }
       .photo-row img {
-        width: 100%; /* Image fills its 'a' container */
-        height: auto;
+        /* No width/height here. JS will set it directly. */
         vertical-align: middle;
         transition: transform 0.3s ease, filter 0.3s ease;
       }
       .photo-row a:hover img {
-        transform: scale(1.03);
+        transform: scale(1.02);
         filter: brightness(0.9);
       }
-      .loading-placeholder {
-        min-height: 60vh;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        font-style: italic;
-        color: #888;
-      }
+      .loading-placeholder { min-height: 60vh; display: flex; justify-content: center; align-items: center; font-style: italic; color: #888; }
       /* Lightbox styles */
       .lightbox { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.92); justify-content: center; align-items: center; }
-      .lightbox-content {
-        position: relative;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-      }
-      .lightbox-content img {
-        max-width: 90vw;
-        max-height: 85vh; /* Leave space for caption */
-        object-fit: contain; /* The definitive rule */
-        border-radius: 4px;
-      }
+      .lightbox-content { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+      .lightbox-content img { max-width: 90vw; max-height: 85vh; object-fit: contain; border-radius: 4px; }
       .lightbox-caption { color: #ccc; margin-top: 1rem; font-family: monospace; text-align: center; font-size: 0.9em; }
       .close-lightbox { position: absolute; top: 15px; right: 35px; color: #f1f1f1; font-size: 40px; font-weight: bold; cursor: pointer; transition: color 0.2s; }
       .close-lightbox:hover { color: #ccc; }
-      footer { margin-top: 2rem; }
     </style>
   </head>
   <body>
@@ -84,7 +63,6 @@
       <p><a href="/">Back to home</a></p>
     </main>
 
-    <!-- The Lightbox Modal -->
     <div id="lightbox" class="lightbox">
       <span class="close-lightbox" id="close-lightbox">&times;</span>
       <div class="lightbox-content">
@@ -150,46 +128,66 @@
 
           gallery.innerHTML = '';
           
-          function createRow(photosInRow) {
+          let i = 0;
+          while (i < photosWithData.length) {
             const rowDiv = document.createElement('div');
             rowDiv.className = 'photo-row';
             
-            const totalRatio = photosInRow.reduce((acc, p) => acc + p.ratio, 0);
-            const rowHeight = (containerWidth - (photosInRow.length - 1) * gap) / totalRatio;
+            const photo1 = photosWithData[i];
             
-            photosInRow.forEach(p => {
+            // Rule 1: Panoramic images get their own row.
+            if (photo1.ratio > 2.2) {
+              const rowHeight = containerWidth / photo1.ratio;
               const link = document.createElement('a');
-              link.style.width = `${p.ratio * rowHeight}px`;
-              link.onclick = () => openLightbox(p);
-              
+              link.onclick = () => openLightbox(photo1);
               const imgEl = document.createElement('img');
-              imgEl.src = p.src;
-              imgEl.alt = p.alt;
-              
+              imgEl.src = photo1.src;
+              imgEl.alt = photo1.alt;
+              imgEl.style.height = `${rowHeight}px`;
+              imgEl.style.width = `${containerWidth}px`;
               link.appendChild(imgEl);
               rowDiv.appendChild(link);
-            });
-            gallery.appendChild(rowDiv);
-          }
-          
-          let i = 0;
-          while (i < photosWithData.length) {
-            const photo1 = photosWithData[i];
-            // Rule: Panoramic images get their own row
-            if (photo1.ratio > 2.2) {
-              createRow([photo1]);
+              gallery.appendChild(rowDiv);
               i += 1;
               continue;
             }
             
             const photo2 = photosWithData[i + 1];
-            // Rule: Max 2 images per row
+            
+            // Rule 2: Create rows of two if a second photo exists.
             if (photo2) {
-              createRow([photo1, photo2]);
+              const photosInRow = [photo1, photo2];
+              const totalRatio = photosInRow.reduce((acc, p) => acc + p.ratio, 0);
+              const rowHeight = (containerWidth - gap) / totalRatio;
+              
+              photosInRow.forEach(p => {
+                const link = document.createElement('a');
+                link.onclick = () => openLightbox(p);
+                const imgEl = document.createElement('img');
+                imgEl.src = p.src;
+                imgEl.alt = p.alt;
+                imgEl.style.height = `${rowHeight}px`;
+                imgEl.style.width = `${p.ratio * rowHeight}px`;
+                link.appendChild(imgEl);
+                rowDiv.appendChild(link);
+              });
+              gallery.appendChild(rowDiv);
               i += 2;
+            
+            // Rule 3: Handle a single, non-panoramic image at the end.
             } else {
-              // Handle the last image if it's on its own
-              createRow([photo1]);
+              rowDiv.classList.add('is-centered');
+              const idealHeight = 450; // A good max height for a single image
+              const link = document.createElement('a');
+              link.onclick = () => openLightbox(photo1);
+              const imgEl = document.createElement('img');
+              imgEl.src = photo1.src;
+              imgEl.alt = photo1.alt;
+              imgEl.style.height = `${idealHeight}px`;
+              imgEl.style.width = `${photo1.ratio * idealHeight}px`;
+              link.appendChild(imgEl);
+              rowDiv.appendChild(link);
+              gallery.appendChild(rowDiv);
               i += 1;
             }
           }
@@ -220,6 +218,5 @@
         });
       });
     </script>
-
   </body>
 </html> 
