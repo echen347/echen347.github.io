@@ -8,34 +8,78 @@
     <link rel="stylesheet" href="https://latex.vercel.app/style.css">
     <link rel="icon" href="./favicon.ico" type="image/x-icon">
     <style>
-      body {
-        min-height: 100vh;
-        display: flex;
-        flex-direction: column;
-      }
-      main {
-        flex: 1;
-      }
+      /* Masonry-like layout for the gallery */
       .photo-gallery {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-        gap: 1rem;
-        margin-top: 2rem;
+        column-count: 3;
+        column-gap: 1rem;
       }
       .photo-gallery img {
         width: 100%;
         height: auto;
+        margin-bottom: 1rem;
         border-radius: 8px;
-        transition: transform 0.2s;
+        cursor: pointer;
+        transition: transform 0.2s, box-shadow 0.2s;
       }
       .photo-gallery img:hover {
-        transform: scale(1.05);
+        transform: scale(1.03);
+        box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+      }
+      /* Responsive adjustments */
+      @media (max-width: 800px) {
+        .photo-gallery {
+          column-count: 2;
+        }
+      }
+      @media (max-width: 500px) {
+        .photo-gallery {
+          column-count: 1;
+        }
+      }
+
+      /* Lightbox/Modal styles */
+      .lightbox {
+        display: none; /* Hidden by default */
+        position: fixed;
+        z-index: 1000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.85);
+        justify-content: center;
+        align-items: center;
+      }
+      .lightbox-content {
+        position: relative;
+        max-width: 90vw;
+        max-height: 85vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      .lightbox-content img {
+        max-width: 100%;
+        max-height: 100%;
+        border-radius: 8px;
+      }
+      .lightbox-caption {
+        color: #ccc;
+        margin-top: 1rem;
+        font-family: monospace;
+        text-align: center;
+      }
+      .close-lightbox {
+        position: absolute;
+        top: -40px;
+        right: 0;
+        color: #fff;
+        font-size: 35px;
+        font-weight: bold;
+        cursor: pointer;
       }
       footer {
         margin-top: 2rem;
-        border-top: 1px solid #ddd;
-        padding-top: 1.5rem;
-        color: #777;
       }
     </style>
   </head>
@@ -45,24 +89,99 @@
       <h1>Photography</h1>
       <p>A selection of my favorite shots. My full portfolio can be found on <a href="https://www.instagram.com/notaprimelens/" target="_blank">Instagram</a>.</p>
       
-      <div class="photo-gallery">
-        <!-- 
-          Add your images here. 
-          1. Place your image files (e.g., photo1.jpg) into the "photography" directory.
-          2. Uncomment the lines below and change the src and alt attributes.
-        -->
-        <img src="photography/korean-temple-roof.jpg" alt="Symmetrical view of a traditional Korean temple roof with intricate patterns">
-        <img src="photography/reclining-buddha-fukuoka.jpg" alt="A large, golden reclining Buddha statue seen through out-of-focus prayer slips in the foreground">
-        <img src="photography/photographer-byodo-in.jpg" alt="A photographer from behind taking a picture of the Byodo-in Temple in Japan">
-        <img src="photography/iidabashi-station-arches.jpg" alt="A low-angle shot of the dramatic concrete arches inside Iidabashi Station in Tokyo">
-        <img src="photography/rider-by-the-sea.jpg" alt="A person sitting on a seawall next to a red motorcycle, looking out at the ocean">
-        <img src="photography/tokyo-tower-framed.jpg" alt="A view of the Tokyo Tower framed by the dark walls of a narrow staircase">
+      <div class="photo-gallery" id="photo-gallery">
+        <!-- Photos will be dynamically inserted here by JavaScript -->
       </div>
 
+      <p><a href="/">Back to home</a></p>
     </main>
+
+    <!-- The Lightbox Modal -->
+    <div id="lightbox" class="lightbox">
+      <span class="close-lightbox" id="close-lightbox">&times;</span>
+      <div class="lightbox-content">
+        <img id="lightbox-img">
+        <div id="lightbox-caption" class="lightbox-caption"></div>
+      </div>
+    </div>
+
     <footer>
       <p>&copy; 2025 Ethan Chen. All rights reserved.</p>
       <p>Powered by <a href="https://latex.vercel.app/" target="_blank">LaTeX.css</a></p>
     </footer>
+
+    <script>
+      document.addEventListener('DOMContentLoaded', function() {
+        // --- PHOTO DATA ---
+        // To add a new photo, add a new object to this array.
+        // Fill in the src, alt, and the EXIF data for the caption.
+        const photos = [
+          {
+            src: 'photography/korean-temple-roof.jpg',
+            alt: 'Symmetrical view of a traditional Korean temple roof with intricate patterns',
+            camera: 'SONY ILCE-7RM4', lens: 'FE 24-70mm F2.8 GM', focalLength: '70mm', shutterSpeed: '1/400s', aperture: 'f/5.6', iso: '100'
+          },
+          {
+            src: 'photography/reclining-buddha-fukuoka.jpg',
+            alt: 'A large, golden reclining Buddha statue seen through out-of-focus prayer slips in the foreground',
+            camera: 'SONY ILCE-7RM4', lens: 'FE 85mm F1.8', focalLength: '85mm', shutterSpeed: '1/100s', aperture: 'f/1.8', iso: '200'
+          },
+          {
+            src: 'photography/photographer-byodo-in.jpg',
+            alt: 'A photographer from behind taking a picture of the Byodo-in Temple in Japan',
+            camera: 'SONY ILCE-7RM4', lens: 'FE 24-70mm F2.8 GM', focalLength: '50mm', shutterSpeed: '1/250s', aperture: 'f/4.0', iso: '100'
+          },
+          {
+            src: 'photography/iidabashi-station-arches.jpg',
+            alt: 'A low-angle shot of the dramatic concrete arches inside Iidabashi Station in Tokyo',
+            camera: 'SONY ILCE-7RM4', lens: 'FE 16-35mm F2.8 GM', focalLength: '16mm', shutterSpeed: '1/60s', aperture: 'f/8.0', iso: '400'
+          },
+          {
+            src: 'photography/rider-by-the-sea.jpg',
+            alt: 'A person sitting on a seawall next to a red motorcycle, looking out at the ocean',
+            camera: 'SONY ILCE-7RM4', lens: 'FE 24-70mm F2.8 GM', focalLength: '70mm', shutterSpeed: '1/500s', aperture: 'f/8.0', iso: '100'
+          },
+          {
+            src: 'photography/tokyo-tower-framed.jpg',
+            alt: 'A view of the Tokyo Tower framed by the dark walls of a narrow staircase',
+            camera: 'SONY ILCE-7RM4', lens: 'FE 24-70mm F2.8 GM', focalLength: '35mm', shutterSpeed: '1/125s', aperture: 'f/7.1', iso: '100'
+          }
+        ];
+
+        const gallery = document.getElementById('photo-gallery');
+        const lightbox = document.getElementById('lightbox');
+        const lightboxImg = document.getElementById('lightbox-img');
+        const lightboxCaption = document.getElementById('lightbox-caption');
+        const closeBtn = document.getElementById('close-lightbox');
+
+        // Populate the gallery
+        photos.forEach(photo => {
+          const img = document.createElement('img');
+          img.src = photo.src;
+          img.alt = photo.alt;
+          img.addEventListener('click', () => openLightbox(photo));
+          gallery.appendChild(img);
+        });
+
+        function openLightbox(photo) {
+          lightbox.style.display = 'flex';
+          lightboxImg.src = photo.src;
+          lightboxCaption.textContent = `${photo.camera} | ${photo.lens} | ${photo.focalLength} | ${photo.shutterSpeed} | ${photo.aperture} | ISO ${photo.iso}`;
+        }
+
+        function closeLightbox() {
+          lightbox.style.display = 'none';
+        }
+
+        closeBtn.addEventListener('click', closeLightbox);
+        lightbox.addEventListener('click', (e) => {
+          // Close if the outer lightbox area is clicked, but not the content inside
+          if (e.target === lightbox) {
+            closeLightbox();
+          }
+        });
+      });
+    </script>
+
   </body>
 </html> 
