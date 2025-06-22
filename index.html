@@ -10,17 +10,8 @@
     <link rel="icon" href="./favicon.ico" type="image/x-icon">
     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <style>
-      body {
-        min-height: 100vh;
-        display: flex;
-        flex-direction: column;
-      }
-      main {
-        flex: 1;
-      }
-      .contact-links {
-        white-space: nowrap;
-        overflow-x: auto;
+      header {
+        margin-bottom: 2rem;
       }
       .bio-flex {
         display: flex;
@@ -38,32 +29,23 @@
         border-radius: 8px;
         flex-shrink: 0;
       }
-      section h2 {
-        margin-top: 2rem;
-        margin-bottom: 1rem;
-      }
       footer {
-        border-top: 1px solid #ddd;
-        padding-top: 1.5rem;
-        margin-top: 3rem;
-        color: #777;
+        margin-top: 2rem;
       }
     </style>
-  </head
+  </head>
   <body>
+    <header>
+      <center>
+        <h1>Ethan Chen</h1>
+        <nav>
+          <a href="/">Home</a> /
+          <a href="writing.html">Writing</a> /
+          <a href="photography.html">Photography</a>
+        </nav>
+      </center>
+    </header>
     <main>
-      <h1>Ethan Chen</h1>
-
-      <section>
-        <h2>Contact</h2>
-        <p class="contact-links">echen347 [at] gatech [dot] edu /
-          <a href="https://www.linkedin.com/in/ethanc27/" target="_blank">linkedin</a> /
-          <a href="cv.pdf" target="_blank">cv</a> /
-          <a href="writing.html">writing</a> /
-          <a href="photography.html">photography</a>
-        </p>
-      </section>
-
       <div class="bio-flex">
         <p>
           Hi! I'm a rising third-year mathematics undergraduate at the Georgia Institute of Technology, where I am fortunate to work with Prof. <a href="https://amirmohan.github.io/" target="_blank">Amirali Aghazadeh</a>. Briefly, my research interests are in theoretical machine learning and optimal transport. Outside of academics, I enjoy <a href="https://goodreads.com/chenthan" target="_blank">reading</a> and bouldering. This summer, I am participating in a REU at Williams College.
@@ -74,25 +56,20 @@
       <section>
         <h2>Research</h2>
         <p>
-          My primary research interests are in the algorithmic and theoretical foundations of diffusion models on general Riemannian manifolds, particularly on Lie groups. My work leverages techniques from optimal transport, differential geometry, and high-dimensional statistics. I am also interested in accelerating sampling for discrete diffusion models for structured data, such as sequences and natural language, with applications to protein modeling.
-        </p>
-        <p>
-          One of my research threads can be summarized as follows:
-        </p>
-        <p>
-          <strong>Main goal:</strong> Given samples \(\{\mathbf{z}^i\}\) drawn from an unknown data distribution \(\rho(\mathbf{z})\), we want to build a generative model that learns to map samples from a simple reference distribution \(\rho_0\) (e.g., a Gaussian) to the complex data distribution \(\rho\).
-          This task combines the structure of Optimal Transport with the flexibility of Normalizing Flows. Brenier's theorem suggests that we should search for maps that are gradients of convex functions. This is a powerful structural prior that can lead to more stable and interpretable models than a generic neural network.
-        </p>
-        <p>
-          My other interests include NLP research, applied machine learning, and AI interpretability.
+          My primary research interests lie at the intersection of generative modeling, optimal transport, and differential geometry. I focus on the algorithmic and theoretical foundations of diffusion models, particularly on how to build them on general Riemannian manifolds such as Lie groups. This work often involves leveraging strong structural priors from optimal transport to create more stable and interpretable models. I am also interested in accelerating sampling for discrete diffusion models for structured data, with applications to protein modeling. My other interests include high-dimensional statistics, NLP research, applied machine learning, and AI interpretability.
         </p>
       </section>
 
-
-
+      <section>
+        <h2>Contact</h2>
+        <p>echen347 [at] gatech [dot] edu /
+          <a href="https://www.linkedin.com/in/ethanc27/" target="_blank">linkedin</a> /
+          <a href="cv.pdf" target="_blank">cv</a>
+        </p>
+      </section>
     </main>
     <footer>
-      <p>&copy; 2024 Ethan Chen. All rights reserved. Last updated: June 2024</p>
+      <p>&copy; 2025 Ethan Chen. All rights reserved. Last updated: 05/17/2025</p>
       <p>Powered by <a href="https://latex.vercel.app/" target="_blank">LaTeX.css</a></p>
     </footer>
   </body>
