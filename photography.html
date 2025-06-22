@@ -8,6 +8,9 @@
     <link rel="stylesheet" href="https://latex.vercel.app/style.css">
     <link rel="icon" href="./favicon.ico" type="image/x-icon">
     <style>
+      body.lightbox-open {
+        overflow: hidden;
+      }
       .photo-gallery {
         display: flex;
         flex-direction: column;
@@ -148,9 +151,13 @@
           lightbox.style.display = 'flex';
           lightboxImg.src = photo.src;
           lightboxCaption.textContent = `${photo.camera} | ${photo.lens} | ${photo.focalLength} | ${photo.shutterSpeed} | ${photo.aperture} | ISO ${photo.iso}`;
+          document.body.classList.add('lightbox-open');
         }
 
-        function closeLightbox() { lightbox.style.display = 'none'; }
+        function closeLightbox() {
+          lightbox.style.display = 'none';
+          document.body.classList.remove('lightbox-open');
+        }
         closeBtn.addEventListener('click', closeLightbox);
         lightbox.addEventListener('click', (e) => { if (e.target === lightbox) closeLightbox(); });
 
