@@ -7,6 +7,8 @@
     <title>Ethan Chen - Photography</title>
     <link rel="stylesheet" href="https://latex.vercel.app/style.css">
     <link rel="icon" href="./favicon.ico" type="image/x-icon">
+    <!-- EXIF Reader Library -->
+    <script src="https://cdn.jsdelivr.net/npm/exif-js"></script>
     <style>
       body.lightbox-open {
         overflow: hidden;
@@ -14,40 +16,44 @@
       .photo-gallery {
         display: flex;
         flex-direction: column;
-        gap: 1rem;
+        gap: 0.75rem; /* Slightly tighter gap */
         opacity: 0;
-        transition: opacity 0.5s ease-in-out;
+        transition: opacity 0.6s ease-in-out;
       }
       .photo-row {
         display: flex;
-        gap: 1rem;
-        align-items: flex-start; /* Prevents stretching if heights differ by a pixel */
+        gap: 0.75rem;
       }
       .photo-row a {
-        line-height: 0; /* Remove extra space below images */
+        line-height: 0;
         cursor: pointer;
+        overflow: hidden;
+        border-radius: 8px;
       }
       .photo-row img {
-        width: auto; /* Width is determined by height and aspect ratio */
-        border-radius: 8px;
-        transition: transform 0.3s, filter 0.3s;
+        width: auto;
+        height: 100%; /* Height is set by JS, width is auto */
+        transition: transform 0.3s ease, filter 0.3s ease;
       }
       .photo-row a:hover img {
-        transform: scale(1.02);
+        transform: scale(1.03);
         filter: brightness(0.9);
       }
-
-      /* Lightbox styles */
-      .lightbox { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.9); justify-content: center; align-items: center; }
-      .lightbox-content { position: relative; max-width: 90vw; max-height: 85vh; display: flex; flex-direction: column; align-items: center; }
-      .lightbox-content img {
-        max-width: 100%;
-        max-height: 100%;
-        object-fit: contain; /* Guarantees no distortion */
-        border-radius: 4px;
+      .loading-placeholder {
+        min-height: 60vh;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        font-style: italic;
+        color: #888;
       }
-      .lightbox-caption { color: #ccc; margin-top: 1rem; font-family: monospace; text-align: center; }
-      .close-lightbox { position: absolute; top: 15px; right: 35px; color: #f1f1f1; font-size: 40px; font-weight: bold; cursor: pointer; }
+      /* Lightbox styles */
+      .lightbox { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.92); justify-content: center; align-items: center; }
+      .lightbox-content { position: relative; max-width: 90vw; max-height: 90vh; display: flex; flex-direction: column; align-items: center; }
+      .lightbox-content img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 4px; }
+      .lightbox-caption { color: #ccc; margin-top: 1rem; font-family: monospace; text-align: center; font-size: 0.9em; }
+      .close-lightbox { position: absolute; top: 15px; right: 35px; color: #f1f1f1; font-size: 40px; font-weight: bold; cursor: pointer; transition: color 0.2s; }
+      .close-lightbox:hover { color: #ccc; }
       footer { margin-top: 2rem; }
     </style>
   </head>
@@ -58,7 +64,7 @@
       <p>A selection of my favorite shots. My full portfolio can be found on <a href="https://www.instagram.com/notaprimelens/" target="_blank">Instagram</a>.</p>
       
       <div class="photo-gallery" id="photo-gallery">
-        <!-- Dynamically generated justified gallery -->
+        <div class="loading-placeholder">Loading gallery...</div>
       </div>
 
       <p><a href="/">Back to home</a></p>
@@ -80,13 +86,14 @@
 
     <script>
       document.addEventListener('DOMContentLoaded', async function() {
-        const photos = [
-          { src: 'photography/korean-temple-roof.jpg', alt: 'Symmetrical view of a traditional Korean temple roof', camera: 'SONY ILCE-7RM4', lens: 'FE 24-70mm F2.8 GM', focalLength: '70mm', shutterSpeed: '1/400s', aperture: 'f/5.6', iso: '100' },
-          { src: 'photography/reclining-buddha-fukuoka.jpg', alt: 'A large, golden reclining Buddha statue seen through prayer slips', camera: 'SONY ILCE-7RM4', lens: 'FE 85mm F1.8', focalLength: '85mm', shutterSpeed: '1/100s', aperture: 'f/1.8', iso: '200' },
-          { src: 'photography/photographer-byodo-in.jpg', alt: 'A photographer shooting the Byodo-in Temple in Japan', camera: 'SONY ILCE-7RM4', lens: 'FE 24-70mm F2.8 GM', focalLength: '50mm', shutterSpeed: '1/250s', aperture: 'f/4.0', iso: '100' },
-          { src: 'photography/iidabashi-station-arches.jpg', alt: 'Concrete arches inside Iidabashi Station in Tokyo', camera: 'SONY ILCE-7RM4', lens: 'FE 16-35mm F2.8 GM', focalLength: '16mm', shutterSpeed: '1/60s', aperture: 'f/8.0', iso: '400' },
-          { src: 'photography/rider-by-the-sea.jpg', alt: 'A person and a motorcycle by the sea', camera: 'SONY ILCE-7RM4', lens: 'FE 24-70mm F2.8 GM', focalLength: '70mm', shutterSpeed: '1/500s', aperture: 'f/8.0', iso: '100' },
-          { src: 'photography/tokyo-tower-framed.jpg', alt: 'Tokyo Tower framed by a narrow staircase', camera: 'SONY ILCE-7RM4', lens: 'FE 24-70mm F2.8 GM', focalLength: '35mm', shutterSpeed: '1/125s', aperture: 'f/7.1', iso: '100' }
+        // Only define the source files. EXIF data will be read automatically.
+        const photoSources = [
+          { src: 'photography/korean-temple-roof.jpg', alt: 'Symmetrical view of a traditional Korean temple roof' },
+          { src: 'photography/reclining-buddha-fukuoka.jpg', alt: 'A large, golden reclining Buddha statue seen through prayer slips' },
+          { src: 'photography/photographer-byodo-in.jpg', alt: 'A photographer shooting the Byodo-in Temple in Japan' },
+          { src: 'photography/iidabashi-station-arches.jpg', alt: 'Concrete arches inside Iidabashi Station in Tokyo' },
+          { src: 'photography/rider-by-the-sea.jpg', alt: 'A person and a motorcycle by the sea' },
+          { src: 'photography/tokyo-tower-framed.jpg', alt: 'Tokyo Tower framed by a narrow staircase' }
         ];
 
         const gallery = document.getElementById('photo-gallery');
@@ -95,67 +102,79 @@
         const lightboxCaption = document.getElementById('lightbox-caption');
         const closeBtn = document.getElementById('close-lightbox');
         
+        async function getExifData(img) {
+          return new Promise(resolve => {
+            EXIF.getData(img, function() {
+              const allTags = EXIF.getAllTags(this);
+              resolve({
+                camera: allTags.Make ? `${allTags.Make} ${allTags.Model}`.trim() : 'Unknown Camera',
+                lens: allTags.LensModel || 'Unknown Lens',
+                focalLength: allTags.FocalLength ? `${allTags.FocalLength}mm` : '',
+                shutterSpeed: allTags.ExposureTime ? `1/${1/allTags.ExposureTime}s` : '',
+                aperture: allTags.FNumber ? `f/${allTags.FNumber}` : '',
+                iso: allTags.ISOSpeedRatings ? `ISO ${allTags.ISOSpeedRatings}` : ''
+              });
+            });
+          });
+        }
+
         async function createJustifiedLayout() {
-          gallery.innerHTML = ''; // Clear previous layout on resize
-          const idealRowHeight = 350; // The new sweet spot for image size
-          const gap = 16; // Corresponds to 1rem in the CSS
+          gallery.innerHTML = '<div class="loading-placeholder">Recalculating layout...</div>';
+          const idealRowHeight = 320;
+          const gap = 12; // Corresponds to 0.75rem
           const containerWidth = gallery.clientWidth;
 
-          const photosWithRatios = await Promise.all(photos.map(p => 
-            new Promise((resolve, reject) => {
+          const photosWithData = await Promise.all(photoSources.map(p => 
+            new Promise(async (resolve, reject) => {
               const img = new Image();
-              img.onload = () => resolve({ ...p, ratio: img.width / img.height });
+              img.onload = async () => {
+                const exif = await getExifData(img);
+                resolve({ ...p, ...exif, ratio: img.width / img.height });
+              };
               img.onerror = reject;
               img.src = p.src;
             })
           ));
 
+          gallery.innerHTML = '';
           let currentRow = [];
           let currentRowRatio = 0;
 
-          photosWithRatios.forEach((photo, index) => {
+          photosWithData.forEach((photo, index) => {
             currentRow.push(photo);
             currentRowRatio += photo.ratio;
 
             const rowWidthWithoutGaps = containerWidth - (currentRow.length - 1) * gap;
             const finalRowHeight = rowWidthWithoutGaps / currentRowRatio;
             
-            // Render the row if it's "full enough" or it's the last photo
-            if (finalRowHeight < idealRowHeight || index === photosWithRatios.length - 1) {
+            if (finalRowHeight < idealRowHeight || index === photosWithData.length - 1) {
               const rowDiv = document.createElement('div');
               rowDiv.className = 'photo-row';
-
+              
               currentRow.forEach(p => {
                 const link = document.createElement('a');
                 link.onclick = () => openLightbox(p);
-                
-                const img = document.createElement('img');
-                img.src = p.src;
-                img.alt = p.alt;
-                // Set height directly on the image, guaranteeing no crop
-                img.style.height = `${finalRowHeight}px`; 
-                
-                link.appendChild(img);
+                const imgEl = document.createElement('img');
+                imgEl.src = p.src;
+                imgEl.alt = p.alt;
+                imgEl.style.height = `${finalRowHeight}px`;
+                link.appendChild(imgEl);
                 rowDiv.appendChild(link);
               });
               
               gallery.appendChild(rowDiv);
-              
               currentRow = [];
               currentRowRatio = 0;
             }
           });
-
           gallery.style.opacity = 1;
         }
 
-        await createJustifiedLayout();
-
-        // Lightbox functionality
         function openLightbox(photo) {
-          lightbox.style.display = 'flex';
+          const captionParts = [photo.camera, photo.lens, photo.focalLength, photo.shutterSpeed, photo.aperture, photo.iso].filter(Boolean);
+          lightboxCaption.textContent = captionParts.join(' | ');
           lightboxImg.src = photo.src;
-          lightboxCaption.textContent = `${photo.camera} | ${photo.lens} | ${photo.focalLength} | ${photo.shutterSpeed} | ${photo.aperture} | ISO ${photo.iso}`;
+          lightbox.style.display = 'flex';
           document.body.classList.add('lightbox-open');
         }
 
@@ -163,14 +182,15 @@
           lightbox.style.display = 'none';
           document.body.classList.remove('lightbox-open');
         }
+
+        await createJustifiedLayout();
         closeBtn.addEventListener('click', closeLightbox);
         lightbox.addEventListener('click', (e) => { if (e.target === lightbox) closeLightbox(); });
 
-        // Debounce resize handler for performance
         let resizeTimer;
         window.addEventListener('resize', () => {
           clearTimeout(resizeTimer);
-          resizeTimer = setTimeout(createJustifiedLayout, 100);
+          resizeTimer = setTimeout(createJustifiedLayout, 150);
         });
       });
     </script>
