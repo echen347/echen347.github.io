@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Ethan Chen - Photography</title>
+    <link rel="stylesheet" href="https://latex.vercel.app/style.css">
+    <link rel="icon" href="./favicon.ico" type="image/x-icon">
+    <style>
+      body {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+      main {
+        flex: 1;
+      }
+      .photo-gallery {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+        gap: 1rem;
+        margin-top: 2rem;
+      }
+      .photo-gallery img {
+        width: 100%;
+        height: auto;
+        border-radius: 8px;
+        transition: transform 0.2s;
+      }
+      .photo-gallery img:hover {
+        transform: scale(1.05);
+      }
+      footer {
+        border-top: 1px solid #ddd;
+        padding-top: 1.5rem;
+        margin-top: 3rem;
+        color: #777;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Photography</h1>
+      <p>A selection of my favorite shots. My full portfolio can be found on <a href="https://www.instagram.com/notaprimelens/" target="_blank">Instagram</a>.</p>
+      
+      <div class="photo-gallery">
+        <!-- 
+          Add your images here. 
+          1. Place your image files (e.g., photo1.jpg) into the "photography" directory.
+          2. Uncomment the lines below and change the src and alt attributes.
+        -->
+        <!-- <img src="photography/photo1.jpg" alt="Description of photo 1"> -->
+        <!-- <img src="photography/photo2.jpg" alt="Description of photo 2"> -->
+        <!-- <img src="photography/photo3.jpg" alt="Description of photo 3"> -->
+      </div>
+
+      <p><a href="/">Back to home</a></p>
+
+    </main>
+    <footer>
+      <p>&copy; 2025 Ethan Chen. All rights reserved.</p>
+      <p>Powered by <a href="https://latex.vercel.app/" target="_blank">LaTeX.css</a></p>
+    </footer>
+  </body>
+</html> 
