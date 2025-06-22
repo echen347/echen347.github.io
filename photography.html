@@ -8,79 +8,61 @@
     <link rel="stylesheet" href="https://latex.vercel.app/style.css">
     <link rel="icon" href="./favicon.ico" type="image/x-icon">
     <style>
-      /* Masonry-like layout for the gallery */
       .photo-gallery {
-        column-count: 3;
-        column-gap: 1rem;
+        display: grid;
+        gap: 1rem;
+        /* Create a fine-grained grid. The 'dense' flow will do the rest. */
+        grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+        grid-auto-rows: 100px;
+        grid-auto-flow: dense; /* The magic for packing items */
+        transition: opacity 0.5s ease-in-out;
+        opacity: 0; /* Start hidden, fade in with JS */
       }
-      .photo-gallery img {
-        width: 100%;
-        height: auto;
-        margin-bottom: 1rem;
+      .photo-item {
+        overflow: hidden;
         border-radius: 8px;
         cursor: pointer;
-        transition: transform 0.2s, box-shadow 0.2s;
       }
-      .photo-gallery img:hover {
-        transform: scale(1.03);
-        box-shadow: 0 8px 20px rgba(0,0,0,0.15);
-      }
-      /* Responsive adjustments */
-      @media (max-width: 800px) {
-        .photo-gallery {
-          column-count: 2;
-        }
-      }
-      @media (max-width: 500px) {
-        .photo-gallery {
-          column-count: 1;
-        }
-      }
-
-      /* Lightbox/Modal styles */
-      .lightbox {
-        display: none; /* Hidden by default */
-        position: fixed;
-        z-index: 1000;
-        left: 0;
-        top: 0;
+      .photo-item img {
         width: 100%;
         height: 100%;
-        background-color: rgba(0, 0, 0, 0.85);
-        justify-content: center;
-        align-items: center;
+        object-fit: cover;
+        transition: transform 0.3s, filter 0.3s;
+      }
+      .photo-item:hover img {
+        transform: scale(1.05);
+        filter: brightness(0.85);
+      }
+
+      /* Classes dynamically assigned by JavaScript based on aspect ratio */
+      .photo-item.landscape {
+        grid-column: span 2;
+      }
+      .photo-item.portrait {
+        grid-row: span 2;
+      }
+      .photo-item.big {
+        grid-column: span 2;
+        grid-row: span 2;
+      }
+
+      /* Lightbox styles (mostly unchanged) */
+      .lightbox {
+        display: none; position: fixed; z-index: 1000; left: 0; top: 0;
+        width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.9);
+        justify-content: center; align-items: center;
       }
       .lightbox-content {
-        position: relative;
-        max-width: 90vw;
-        max-height: 85vh;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
+        position: relative; max-width: 90vw; max-height: 85vh;
+        display: flex; flex-direction: column; align-items: center;
       }
-      .lightbox-content img {
-        max-width: 100%;
-        max-height: 100%;
-        border-radius: 8px;
-      }
-      .lightbox-caption {
-        color: #ccc;
-        margin-top: 1rem;
-        font-family: monospace;
-        text-align: center;
-      }
+      .lightbox-content img { max-width: 100%; max-height: 100%; border-radius: 4px; }
+      .lightbox-caption { color: #ccc; margin-top: 1rem; font-family: monospace; text-align: center; }
       .close-lightbox {
-        position: absolute;
-        top: -40px;
-        right: 0;
-        color: #fff;
-        font-size: 35px;
-        font-weight: bold;
-        cursor: pointer;
+        position: absolute; top: 15px; right: 35px; color: #f1f1f1;
+        font-size: 40px; font-weight: bold; cursor: pointer;
       }
-      footer {
-        margin-top: 2rem;
-      }
+      footer { margin-top: 2rem; }
     </style>
   </head>
   <body>
@@ -90,7 +72,7 @@
       <p>A selection of my favorite shots. My full portfolio can be found on <a href="https://www.instagram.com/notaprimelens/" target="_blank">Instagram</a>.</p>
       
       <div class="photo-gallery" id="photo-gallery">
-        <!-- Photos will be dynamically inserted here by JavaScript -->
+        <!-- Photos dynamically loaded here -->
       </div>
 
       <p><a href="/">Back to home</a></p>
@@ -112,40 +94,13 @@
 
     <script>
       document.addEventListener('DOMContentLoaded', function() {
-        // --- PHOTO DATA ---
-        // To add a new photo, add a new object to this array.
-        // Fill in the src, alt, and the EXIF data for the caption.
         const photos = [
-          {
-            src: 'photography/korean-temple-roof.jpg',
-            alt: 'Symmetrical view of a traditional Korean temple roof with intricate patterns',
-            camera: 'SONY ILCE-7RM4', lens: 'FE 24-70mm F2.8 GM', focalLength: '70mm', shutterSpeed: '1/400s', aperture: 'f/5.6', iso: '100'
-          },
-          {
-            src: 'photography/reclining-buddha-fukuoka.jpg',
-            alt: 'A large, golden reclining Buddha statue seen through out-of-focus prayer slips in the foreground',
-            camera: 'SONY ILCE-7RM4', lens: 'FE 85mm F1.8', focalLength: '85mm', shutterSpeed: '1/100s', aperture: 'f/1.8', iso: '200'
-          },
-          {
-            src: 'photography/photographer-byodo-in.jpg',
-            alt: 'A photographer from behind taking a picture of the Byodo-in Temple in Japan',
-            camera: 'SONY ILCE-7RM4', lens: 'FE 24-70mm F2.8 GM', focalLength: '50mm', shutterSpeed: '1/250s', aperture: 'f/4.0', iso: '100'
-          },
-          {
-            src: 'photography/iidabashi-station-arches.jpg',
-            alt: 'A low-angle shot of the dramatic concrete arches inside Iidabashi Station in Tokyo',
-            camera: 'SONY ILCE-7RM4', lens: 'FE 16-35mm F2.8 GM', focalLength: '16mm', shutterSpeed: '1/60s', aperture: 'f/8.0', iso: '400'
-          },
-          {
-            src: 'photography/rider-by-the-sea.jpg',
-            alt: 'A person sitting on a seawall next to a red motorcycle, looking out at the ocean',
-            camera: 'SONY ILCE-7RM4', lens: 'FE 24-70mm F2.8 GM', focalLength: '70mm', shutterSpeed: '1/500s', aperture: 'f/8.0', iso: '100'
-          },
-          {
-            src: 'photography/tokyo-tower-framed.jpg',
-            alt: 'A view of the Tokyo Tower framed by the dark walls of a narrow staircase',
-            camera: 'SONY ILCE-7RM4', lens: 'FE 24-70mm F2.8 GM', focalLength: '35mm', shutterSpeed: '1/125s', aperture: 'f/7.1', iso: '100'
-          }
+          { src: 'photography/korean-temple-roof.jpg', alt: 'Symmetrical view of a traditional Korean temple roof', camera: 'SONY ILCE-7RM4', lens: 'FE 24-70mm F2.8 GM', focalLength: '70mm', shutterSpeed: '1/400s', aperture: 'f/5.6', iso: '100' },
+          { src: 'photography/reclining-buddha-fukuoka.jpg', alt: 'A large, golden reclining Buddha statue seen through prayer slips', camera: 'SONY ILCE-7RM4', lens: 'FE 85mm F1.8', focalLength: '85mm', shutterSpeed: '1/100s', aperture: 'f/1.8', iso: '200' },
+          { src: 'photography/photographer-byodo-in.jpg', alt: 'A photographer shooting the Byodo-in Temple in Japan', camera: 'SONY ILCE-7RM4', lens: 'FE 24-70mm F2.8 GM', focalLength: '50mm', shutterSpeed: '1/250s', aperture: 'f/4.0', iso: '100' },
+          { src: 'photography/iidabashi-station-arches.jpg', alt: 'Concrete arches inside Iidabashi Station in Tokyo', camera: 'SONY ILCE-7RM4', lens: 'FE 16-35mm F2.8 GM', focalLength: '16mm', shutterSpeed: '1/60s', aperture: 'f/8.0', iso: '400' },
+          { src: 'photography/rider-by-the-sea.jpg', alt: 'A person and a motorcycle by the sea', camera: 'SONY ILCE-7RM4', lens: 'FE 24-70mm F2.8 GM', focalLength: '70mm', shutterSpeed: '1/500s', aperture: 'f/8.0', iso: '100' },
+          { src: 'photography/tokyo-tower-framed.jpg', alt: 'Tokyo Tower framed by a narrow staircase', camera: 'SONY ILCE-7RM4', lens: 'FE 24-70mm F2.8 GM', focalLength: '35mm', shutterSpeed: '1/125s', aperture: 'f/7.1', iso: '100' }
         ];
 
         const gallery = document.getElementById('photo-gallery');
@@ -154,13 +109,38 @@
         const lightboxCaption = document.getElementById('lightbox-caption');
         const closeBtn = document.getElementById('close-lightbox');
 
-        // Populate the gallery
-        photos.forEach(photo => {
-          const img = document.createElement('img');
-          img.src = photo.src;
-          img.alt = photo.alt;
-          img.addEventListener('click', () => openLightbox(photo));
-          gallery.appendChild(img);
+        const promises = photos.map(photoData => {
+          return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.src = photoData.src;
+            img.onload = () => {
+              const aspectRatio = img.naturalWidth / img.naturalHeight;
+              const item = document.createElement('figure');
+              item.className = 'photo-item';
+              
+              // Assign class based on aspect ratio
+              if (aspectRatio > 1.4) item.classList.add('landscape');
+              else if (aspectRatio < 0.8) item.classList.add('portrait');
+              // Optional: Add a 'big' class for particularly large or important photos
+              // if (img.naturalWidth > 2000) item.classList.add('big');
+
+              const imgElement = document.createElement('img');
+              imgElement.src = photoData.src;
+              imgElement.alt = photoData.alt;
+              
+              item.appendChild(imgElement);
+              item.addEventListener('click', () => openLightbox(photoData));
+              resolve(item);
+            };
+            img.onerror = reject;
+          });
+        });
+
+        Promise.all(promises).then(items => {
+          items.forEach(item => gallery.appendChild(item));
+          gallery.style.opacity = 1; // Fade in the gallery
+        }).catch(err => {
+          console.error("Could not load images for the gallery.", err);
         });
 
         function openLightbox(photo) {
@@ -175,10 +155,7 @@
 
         closeBtn.addEventListener('click', closeLightbox);
         lightbox.addEventListener('click', (e) => {
-          // Close if the outer lightbox area is clicked, but not the content inside
-          if (e.target === lightbox) {
-            closeLightbox();
-          }
+          if (e.target === lightbox) closeLightbox();
         });
       });
     </script>
