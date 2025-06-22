@@ -31,8 +31,9 @@
         border-radius: 8px;
       }
       .photo-row img {
-        width: auto;
-        height: 100%; /* Height is set by JS, width is auto */
+        width: auto; /* Width is determined by height and aspect ratio */
+        height: 100%; /* Height is controlled by the JS via the container */
+        vertical-align: middle; /* Fixes potential alignment issues */
         transition: transform 0.3s ease, filter 0.3s ease;
       }
       .photo-row a:hover img {
@@ -118,10 +119,10 @@
             EXIF.getData(img, function() {
               const allTags = EXIF.getAllTags(this);
               resolve({
-                camera: allTags.Make ? `${allTags.Make} ${allTags.Model}`.trim() : 'Unknown Camera',
-                lens: allTags.LensModel || 'Unknown Lens',
+                camera: allTags.Make && allTags.Model ? `${allTags.Make} ${allTags.Model}`.trim() : 'Unknown Camera',
+                lens: allTags.LensModel || allTags.LensInfo || 'Unknown Lens',
                 focalLength: allTags.FocalLength ? `${allTags.FocalLength}mm` : '',
-                shutterSpeed: allTags.ExposureTime ? `1/${1/allTags.ExposureTime}s` : '',
+                shutterSpeed: allTags.ExposureTime ? (allTags.ExposureTime < 1 ? `1/${Math.round(1/allTags.ExposureTime)}s` : `${allTags.ExposureTime}s`) : '',
                 aperture: allTags.FNumber ? `f/${allTags.FNumber}` : '',
                 iso: allTags.ISOSpeedRatings ? `ISO ${allTags.ISOSpeedRatings}` : ''
               });
@@ -161,6 +162,7 @@
             if (finalRowHeight < idealRowHeight || index === photosWithData.length - 1) {
               const rowDiv = document.createElement('div');
               rowDiv.className = 'photo-row';
+              rowDiv.style.height = `${finalRowHeight}px`; // Set height on the row
               
               currentRow.forEach(p => {
                 const link = document.createElement('a');
@@ -168,7 +170,6 @@
                 const imgEl = document.createElement('img');
                 imgEl.src = p.src;
                 imgEl.alt = p.alt;
-                imgEl.style.height = `${finalRowHeight}px`;
                 link.appendChild(imgEl);
                 rowDiv.appendChild(link);
               });
