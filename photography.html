@@ -33,7 +33,7 @@
       }
       .photo-row img {
         /* No width/height here. JS will set it directly. */
-        vertical-align: middle;
+        display: block; /* Treat image as a block to avoid weird inline spacing. */
         transition: transform 0.3s ease, filter 0.3s ease;
       }
       .photo-row a:hover img {
@@ -111,8 +111,10 @@
 
         async function createRuleBasedLayout() {
           gallery.innerHTML = '<div class="loading-placeholder">Curating layout...</div>';
-          const containerWidth = gallery.clientWidth;
-          const gap = 16; // 1rem
+          
+          // Use more precise measurements to avoid rounding errors that cause stretching.
+          const containerWidth = gallery.getBoundingClientRect().width;
+          const gap = parseFloat(getComputedStyle(document.documentElement).fontSize); // Calculate 1rem gap in px
 
           const photosWithData = await Promise.all(photoSources.map(p => 
             new Promise(async (resolve, reject) => {
