@@ -54,7 +54,7 @@
     <main>
       <p><a href="/">Back to home</a></p>
       <h1>Photography</h1>
-      <p>A selection of my favorite shots. Click on an image to view it in a lightbox. More on <a href="https://www.instagram.com/notaprimelens/" target="_blank">Instagram</a>.</p>
+      <p>A selection of my favorite shots. Click on an image to view it in a lightbox and see the settings used. More on <a href="https://www.instagram.com/notaprimelens/" target="_blank">Instagram</a>.</p>
       
       <div class="loading-placeholder" id="gallery-placeholder">Curating layout...</div>
       <div class="photo-gallery" id="photo-gallery">
@@ -200,7 +200,18 @@
         }
 
         function openLightbox(photo) {
-          const captionParts = [photo.camera, photo.lens, photo.focalLength, photo.shutterSpeed, photo.aperture, photo.iso].filter(Boolean);
+          let lensInfo = photo.lens; // Start with the original lens info
+
+          // Handle Fujifilm X100V fixed lens
+          if (photo.camera && photo.camera.includes('X100V')) {
+            lensInfo = '23mm F2 Fixed Lens';
+          } 
+          // Handle formatting for other lenses that might contain a pipe
+          else if (lensInfo && typeof lensInfo === 'string') {
+            lensInfo = lensInfo.replace(/ \\| /g, ' - ');
+          }
+          
+          const captionParts = [photo.camera, lensInfo, photo.focalLength, photo.shutterSpeed, photo.aperture, photo.iso].filter(Boolean);
           lightboxCaption.textContent = captionParts.join(' | ');
           lightboxImg.src = photo.src;
           lightbox.style.display = 'flex';
