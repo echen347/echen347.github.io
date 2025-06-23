@@ -102,6 +102,7 @@
           return new Promise(resolve => {
             EXIF.getData(img, function() {
               const allTags = EXIF.getAllTags(this);
+              console.log('EXIF data for', img.src, allTags);
               resolve({
                 camera: allTags.Make && allTags.Model ? `${allTags.Make} ${allTags.Model}`.trim() : 'Unknown Camera',
                 lens: allTags.LensModel || allTags.LensInfo || 'Unknown Lens',
