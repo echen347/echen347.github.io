@@ -77,7 +77,8 @@
     </footer>
 
     <script>
-      document.addEventListener('DOMContentLoaded', async function() {
+      // Wait for the entire page to load, including images and stylesheets.
+      window.addEventListener('load', function() {
         const photoSources = [
           { src: 'photography/korean-temple-roof.jpg', alt: 'Symmetrical view of a traditional Korean temple roof' },
           { src: 'photography/reclining-buddha-fukuoka.jpg', alt: 'A large, golden reclining Buddha statue seen through prayer slips' },
@@ -112,9 +113,8 @@
         async function createRuleBasedLayout() {
           gallery.innerHTML = '<div class="loading-placeholder">Curating layout...</div>';
           
-          // Use more precise measurements to avoid rounding errors that cause stretching.
           const containerWidth = gallery.getBoundingClientRect().width;
-          const gap = parseFloat(getComputedStyle(document.documentElement).fontSize); // Calculate 1rem gap in px
+          const gap = parseFloat(getComputedStyle(document.documentElement).fontSize);
 
           const photosWithData = await Promise.all(photoSources.map(p => 
             new Promise(async (resolve, reject) => {
@@ -137,7 +137,6 @@
             
             const photo1 = photosWithData[i];
             
-            // Rule 1: Panoramic images get their own row.
             if (photo1.ratio > 2.2) {
               const rowHeight = containerWidth / photo1.ratio;
               const link = document.createElement('a');
@@ -156,7 +155,6 @@
             
             const photo2 = photosWithData[i + 1];
             
-            // Rule 2: Create rows of two if a second photo exists.
             if (photo2) {
               const photosInRow = [photo1, photo2];
               const totalRatio = photosInRow.reduce((acc, p) => acc + p.ratio, 0);
@@ -175,11 +173,9 @@
               });
               gallery.appendChild(rowDiv);
               i += 2;
-            
-            // Rule 3: Handle a single, non-panoramic image at the end.
             } else {
               rowDiv.classList.add('is-centered');
-              const idealHeight = 450; // A good max height for a single image
+              const idealHeight = 450;
               const link = document.createElement('a');
               link.onclick = () => openLightbox(photo1);
               const imgEl = document.createElement('img');
@@ -209,14 +205,27 @@
           document.body.classList.remove('lightbox-open');
         }
 
-        await createRuleBasedLayout();
-        closeBtn.addEventListener('click', closeLightbox);
-        lightbox.addEventListener('click', (e) => { if (e.target === lightbox) closeLightbox(); });
+        // Initial layout calculation
+        createRuleBasedLayout();
+        
+        // --- Event Listeners ---
 
-        let resizeTimer;
-        window.addEventListener('resize', () => {
-          clearTimeout(resizeTimer);
-          resizeTimer = setTimeout(createRuleBasedLayout, 150);
+        // Recalculate layout on window resize (debounced)
+        let resizeTimeout;
+        window.addEventListener('resize', function() {
+            clearTimeout(resizeTimeout);
+            gallery.style.opacity = 0; // Hide gallery to prevent flash of unstyled content
+            resizeTimeout = setTimeout(createRuleBasedLayout, 150);
+        });
+
+        // Close lightbox with the 'X' button
+        closeBtn.onclick = closeLightbox;
+
+        // Close lightbox by clicking on the background
+        lightbox.addEventListener('click', (e) => {
+          if (e.target === lightbox) {
+            closeLightbox();
+          }
         });
       });
     </script>
