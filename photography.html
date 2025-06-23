@@ -56,8 +56,9 @@
       <h1>Photography</h1>
       <p>A selection of my favorite shots. More on <a href="https://www.instagram.com/notaprimelens/" target="_blank">Instagram</a>.</p>
       
+      <div class="loading-placeholder" id="gallery-placeholder">Curating layout...</div>
       <div class="photo-gallery" id="photo-gallery">
-        <div class="loading-placeholder">Loading gallery...</div>
+        <!-- Images will be loaded here by script -->
       </div>
 
       <p><a href="/">Back to home</a></p>
@@ -89,6 +90,7 @@
         ];
 
         const gallery = document.getElementById('photo-gallery');
+        const placeholder = document.getElementById('gallery-placeholder');
         const lightbox = document.getElementById('lightbox');
         const lightboxImg = document.getElementById('lightbox-img');
         const lightboxCaption = document.getElementById('lightbox-caption');
@@ -111,7 +113,7 @@
         }
 
         async function createRuleBasedLayout() {
-          gallery.innerHTML = '<div class="loading-placeholder">Curating layout...</div>';
+          // No longer need to set a message here, it's in the HTML.
           
           const containerWidth = gallery.getBoundingClientRect().width;
           const gap = parseFloat(getComputedStyle(document.documentElement).fontSize);
@@ -189,7 +191,8 @@
               i += 1;
             }
           }
-          gallery.style.opacity = 1;
+          placeholder.style.display = 'none'; // Hide the placeholder
+          gallery.style.opacity = 1; // Fade in the gallery
         }
 
         function openLightbox(photo) {
@@ -215,6 +218,7 @@
         window.addEventListener('resize', function() {
             clearTimeout(resizeTimeout);
             gallery.style.opacity = 0; // Hide gallery to prevent flash of unstyled content
+            placeholder.style.display = 'flex'; // Show placeholder again during recalc
             resizeTimeout = setTimeout(createRuleBasedLayout, 150);
         });
 
