@@ -54,7 +54,7 @@
     <main>
       <p><a href="/">Back to home</a></p>
       <h1>Photography</h1>
-      <p>A selection of my favorite shots. More on <a href="https://www.instagram.com/notaprimelens/" target="_blank">Instagram</a>.</p>
+      <p>A selection of my favorite shots. Click on an image to view it in a lightbox. More on <a href="https://www.instagram.com/notaprimelens/" target="_blank">Instagram</a>.</p>
       
       <div class="loading-placeholder" id="gallery-placeholder">Curating layout...</div>
       <div class="photo-gallery" id="photo-gallery">
@@ -81,14 +81,14 @@
       // Wait for the entire page to load, including images and stylesheets.
       window.addEventListener('load', function() {
         const photoSources = [
-          { src: 'photography/oculus-and-one-world-trade.jpg', alt: 'The Oculus and One World Trade Center', preference: 4 },
-          { src: 'photography/pine-tree-branch.jpg', alt: 'A pine tree branch with a blurred background', preference: 7 },
-          { src: 'photography/korean-temple-roof.jpg', alt: 'Symmetrical view of a traditional Korean temple roof', preference: 3 },
-          { src: 'photography/reclining-buddha-fukuoka.jpg', alt: 'A large, golden reclining Buddha statue seen through prayer slips', preference: 5 },
-          { src: 'photography/photographer-byodo-in.jpg', alt: 'A photographer shooting the Byodo-in Temple in Japan', preference: 6 },
-          { src: 'photography/uji-station-arches.jpg', alt: 'Concrete arches inside Uji Station in Uji', preference: 1 },
-          { src: 'photography/rider-by-the-sea.jpg', alt: 'A person and a motorcycle by the sea', preference: 8 },
-          { src: 'photography/tokyo-tower-framed.jpg', alt: 'Tokyo Tower framed by a narrow staircase', preference: 2 }
+           { src: 'photography/uji-station-arches.jpg', alt: 'Repetitive concrete arches creating a tunnel effect inside Uji Station, Japan.', preference: 1 },
+           { src: 'photography/tokyo-tower-framed.jpg', alt: 'Tokyo Tower viewed through the narrow frame of an urban staircase.', preference: 2 },
+           { src: 'photography/seoul-palace-roof.jpg', alt: 'Symmetrical view of a traditional palace roof at Gyeongbokgung Palace in Seoul, South Korea.', preference: 3 },
+           { src: 'photography/oculus-nyc.jpg', alt: 'The Oculus structure with One World Trade Center rising in the background in New York City.', preference: 4 },
+           { src: 'photography/osaka-lion-shrine.jpg', alt: 'The iconic stone lion head stage at Namba Yasaka Shrine in Osaka, Japan.', preference: 5 },
+           { src: 'photography/byodo-in-photographer.jpg', alt: 'A photographer captures the reflection of Byodo-in Temple (Phoenix Hall) in Uji, Japan.', preference: 6 },
+           { src: 'photography/pine-branch-sunset.jpg', alt: 'A lone pine tree branch silhouetted against a soft, blurred sunset background.', preference: 7 },
+           { src: 'photography/rider-by-sea.jpg', alt: 'A lone rider and their motorcycle parked on a cliff overlooking the sea at sunset.', preference: 8 }
         ];
 
         const gallery = document.getElementById('photo-gallery');
