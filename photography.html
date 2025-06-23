@@ -206,9 +206,9 @@
           if (photo.camera && photo.camera.includes('X100V')) {
             lensInfo = '23mm F2 Fixed Lens';
           } 
-          // Handle formatting for other lenses that might contain a pipe
-          else if (lensInfo && typeof lensInfo === 'string') {
-            lensInfo = lensInfo.replace(/ \\| /g, ' - ');
+          // Handle formatting for SIGMA lenses
+          else if (lensInfo && typeof lensInfo === 'string' && lensInfo.includes('DG DN') && lensInfo.includes('|')) {
+            lensInfo = 'SIGMA ' + lensInfo.replace(' | ', ' ');
           }
           
           const captionParts = [photo.camera, lensInfo, photo.focalLength, photo.shutterSpeed, photo.aperture, photo.iso].filter(Boolean);
