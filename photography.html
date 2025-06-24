@@ -80,7 +80,7 @@
     <script>
       // For a much faster experience, we now use pre-calculated image metadata.
       // This avoids downloading all images and parsing them on the client's device.
-      document.addEventListener('DOMContentLoaded', function() {
+      window.addEventListener('load', function() {
         // NOTE: To add, remove, or reorder photos, open `generate_metadata.html`
         // in your browser, update the list, and paste the new output here.
         const photoSources = [
