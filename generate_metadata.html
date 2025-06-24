@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Photo Metadata Generator</title>
     <link rel="stylesheet" href="https://latex.vercel.app/style.css">
-    <script src="https://cdn.jsdelivr.net/npm/exif-js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/exifreader@4.21.0/dist/exif-reader.min.js"></script>
     <style>
         body { padding: 2rem; }
         #output {
@@ -62,8 +62,8 @@
         const statusEl = document.getElementById('status');
 
         generateBtn.addEventListener('click', async () => {
-            if (typeof EXIF === 'undefined') {
-                statusEl.textContent = 'Error: EXIF.js library not found.';
+            if (typeof ExifReader === 'undefined') {
+                statusEl.textContent = 'Error: ExifReader library not found.';
                 return;
             }
 
@@ -74,30 +74,24 @@
             try {
                 const photosWithData = await Promise.all(photoSourcesToProcess.map(p => 
                     new Promise(async (resolve, reject) => {
-                        const img = new Image();
-                        img.onload = async () => {
-                            const exif = await getExifData(img);
+                        try {
+                            const exif = await getExifData(p.src);
                             statusEl.innerHTML += `<br>- Extracted data for: ${p.src}`;
                             const orderedData = {
                                 src: p.src,
                                 alt: p.alt,
                                 preference: p.preference,
-                                width: img.naturalWidth,
-                                height: img.naturalHeight,
-                                camera: exif.camera,
-                                lens: exif.lens,
-                                focalLength: exif.focalLength,
-                                shutterSpeed: exif.shutterSpeed,
-                                aperture: exif.aperture,
-                                iso: exif.iso,
+                                ...exif
                             };
                             resolve(orderedData);
-                        };
-                        img.onerror = (e) => {
-                            statusEl.innerHTML += `<br>- <span style="color:red;">Failed to load:</span> ${p.src}`;
-                            reject(e);
-                        };
-                        img.src = p.src;
+                        } catch (e) {
+                             statusEl.innerHTML += `<br>- <span style="color:red;">Failed to process EXIF for:</span> ${p.src}`;
+                            // Resolve with basic info even if EXIF fails, so the process doesn't halt
+                            const img = new Image();
+                            img.onload = () => resolve({ src: p.src, alt: p.alt, preference: p.preference, width: img.naturalWidth, height: img.naturalHeight, camera: 'Unknown', lens: 'Unknown', focalLength: '', shutterSpeed: '', aperture: '', iso: '' });
+                            img.onerror = () => resolve({ src: p.src, alt: p.alt, preference: p.preference, width: 0, height: 0, camera: 'Unknown', lens: 'Unknown', focalLength: '', shutterSpeed: '', aperture: '', iso: '' });
+                            img.src = p.src;
+                        }
                     })
                 ));
                 
@@ -113,29 +107,34 @@
             }
         });
 
-        async function getExifData(img) {
-            return new Promise(resolve => {
-                EXIF.getData(img, function() {
-                    const allTags = EXIF.getAllTags(this);
-                    const cameraModel = allTags.Model || '';
-                    let lensInfo = allTags.LensModel || allTags.LensInfo || allTags.undefined || 'Unknown Lens';
-                    
-                    if (cameraModel.includes('X100V')) {
-                        lensInfo = '23mm F2 Fixed Lens';
-                    } else if (typeof lensInfo === 'string' && lensInfo.includes('DG DN') && lensInfo.includes('|')) {
-                        lensInfo = 'SIGMA ' + lensInfo.replace(' | ', ' ');
-                    }
+        async function getExifData(imageUrl) {
+            const tags = await ExifReader.load(imageUrl, { includeUnknown: true });
+            
+            const width = tags['Image Width']?.value || tags['PixelXDimension']?.value || 0;
+            const height = tags['Image Height']?.value || tags['PixelYDimension']?.value || 0;
+            const make = tags.Make?.description.trim() || '';
+            const model = tags.Model?.description.trim() || '';
+            let lensInfo = tags.LensModel?.description || 'Unknown Lens';
 
-                    resolve({
-                        camera: allTags.Make && cameraModel ? `${allTags.Make} ${cameraModel}`.trim() : 'Unknown Camera',
-                        lens: lensInfo,
-                        focalLength: allTags.FocalLength ? `${allTags.FocalLength}mm` : '',
-                        shutterSpeed: allTags.ExposureTime ? (allTags.ExposureTime < 1 ? `1/${Math.round(1/allTags.ExposureTime)}s` : `${allTags.ExposureTime}s`) : '',
-                        aperture: allTags.FNumber ? `f/${allTags.FNumber}` : '',
-                        iso: allTags.ISOSpeedRatings ? `ISO ${allTags.ISOSpeedRatings}` : ''
-                    });
-                });
-            });
+            if (model.includes('X100V')) {
+                lensInfo = '23mm F2 Fixed Lens';
+            } else if (typeof lensInfo === 'string' && lensInfo.includes('DG DN') && lensInfo.includes('|')) {
+                lensInfo = 'SIGMA ' + lensInfo.replace(' | ', ' ');
+            }
+
+            const exposureTime = tags.ExposureTime?.value;
+            const shutterSpeed = exposureTime ? (exposureTime < 1 ? `1/${Math.round(1/exposureTime)}s` : `${exposureTime}s`) : '';
+            
+            return {
+                width: width,
+                height: height,
+                camera: `${make} ${model}`.trim(),
+                lens: lensInfo,
+                focalLength: tags.FocalLength?.description || '',
+                shutterSpeed: shutterSpeed,
+                aperture: tags.FNumber?.description ? `f/${tags.FNumber.description}` : '',
+                iso: tags.ISOSpeedRatings?.description ? `ISO ${tags.ISOSpeedRatings.description}` : '',
+            };
         }
     </script>
 </body>
