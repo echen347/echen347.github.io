@@ -7,8 +7,8 @@
     <title>Ethan Chen - Photography</title>
     <link rel="stylesheet" href="https://latex.vercel.app/style.css">
     <link rel="icon" href="./favicon.ico" type="image/x-icon">
-    <!-- EXIF Reader Library -->
-    <script src="https://cdn.jsdelivr.net/npm/exif-js"></script>
+    <!-- EXIF Reader Library (REMOVED FOR PERFORMANCE) -->
+    <!-- <script src="https://cdn.jsdelivr.net/npm/exif-js"></script> -->
     <style>
       body.lightbox-open { overflow: hidden; }
       .photo-gallery {
@@ -78,18 +78,117 @@
     </footer>
 
     <script>
-      // Wait for the entire page to load, including images and stylesheets.
-      window.addEventListener('load', function() {
+      // For a much faster experience, we now use pre-calculated image metadata.
+      // This avoids downloading all images and parsing them on the client's device.
+      document.addEventListener('DOMContentLoaded', function() {
+        // NOTE: To add, remove, or reorder photos, open `generate_metadata.html`
+        // in your browser, update the list, and paste the new output here.
         const photoSources = [
-           { src: 'photography/uji-station-arches.jpg', alt: 'Repetitive concrete arches creating a tunnel effect inside Uji Station, Japan.', preference: 1 },
-           { src: 'photography/tokyo-tower-framed.jpg', alt: 'Tokyo Tower viewed through the narrow frame of an urban staircase.', preference: 2 },
-           { src: 'photography/seoul-palace-roof.jpg', alt: 'Symmetrical view of a traditional palace roof at Gyeongbokgung Palace in Seoul, South Korea.', preference: 3 },
-           { src: 'photography/oculus-nyc.jpg', alt: 'The Oculus structure with One World Trade Center rising in the background in New York City.', preference: 4 },
-           { src: 'photography/osaka-lion-shrine.jpg', alt: 'The iconic stone lion head stage at Namba Yasaka Shrine in Osaka, Japan.', preference: 5 },
-           { src: 'photography/byodo-in-photographer.jpg', alt: 'A photographer captures the reflection of Byodo-in Temple (Phoenix Hall) in Uji, Japan.', preference: 6 },
-           { src: 'photography/pine-branch-sunset.jpg', alt: 'A lone pine tree branch silhouetted against a soft, blurred sunset background.', preference: 7 },
-           { src: 'photography/rider-by-sea.jpg', alt: 'A lone rider and their motorcycle parked on a cliff overlooking the sea at sunset.', preference: 8 }
-        ];
+  {
+    "src": "photography/uji-station-arches.jpg",
+    "alt": "Repetitive concrete arches creating a tunnel effect inside Uji Station, Japan.",
+    "preference": 1,
+    "width": 1869,
+    "height": 2336,
+    "camera": "SONY ILCE-7M4",
+    "lens": "SIGMA 24-70mm F2.8 DG DN Art 019",
+    "focalLength": "24mm",
+    "shutterSpeed": "1/400s",
+    "aperture": "f/4",
+    "iso": "ISO 400"
+  },
+  {
+    "src": "photography/tokyo-tower-framed.jpg",
+    "alt": "Tokyo Tower viewed through the narrow frame of an urban staircase.",
+    "preference": 2,
+    "width": 4519,
+    "height": 6779,
+    "camera": "SONY ILCE-7M4",
+    "lens": "SIGMA 24-70mm F2.8 DG DN Art 019",
+    "focalLength": "24mm",
+    "shutterSpeed": "1/60s",
+    "aperture": "f/20",
+    "iso": "ISO 100"
+  },
+  {
+    "src": "photography/seoul-palace-roof.jpg",
+    "alt": "Symmetrical view of a traditional palace roof at Gyeongbokgung Palace in Seoul, South Korea.",
+    "preference": 3,
+    "width": 1864,
+    "height": 2796,
+    "camera": "SONY ILCE-7M4",
+    "lens": "SIGMA 24-70mm F2.8 DG DN Art 019",
+    "focalLength": "70mm",
+    "shutterSpeed": "1/500s",
+    "aperture": "f/7.1",
+    "iso": "ISO 100"
+  },
+  {
+    "src": "photography/oculus-nyc.jpg",
+    "alt": "The Oculus structure with One World Trade Center rising in the background in New York City.",
+    "preference": 4,
+    "width": 3847,
+    "height": 5770,
+    "camera": "FUJIFILM X100V",
+    "lens": "23mm F2 Fixed Lens",
+    "focalLength": "23mm",
+    "shutterSpeed": "1/125s",
+    "aperture": "f/11",
+    "iso": "ISO 200"
+  },
+  {
+    "src": "photography/osaka-lion-shrine.jpg",
+    "alt": "The iconic stone lion head stage at Namba Yasaka Shrine in Osaka, Japan.",
+    "preference": 5,
+    "width": 1723,
+    "height": 2585,
+    "camera": "SONY ILCE-7M4",
+    "lens": "SIGMA 24-70mm F2.8 DG DN Art 019",
+    "focalLength": "30.7mm",
+    "shutterSpeed": "1/250s",
+    "aperture": "f/4.5",
+    "iso": "ISO 100"
+  },
+  {
+    "src": "photography/byodo-in-photographer.jpg",
+    "alt": "A photographer captures the reflection of Byodo-in Temple (Phoenix Hall) in Uji, Japan.",
+    "preference": 6,
+    "width": 3504,
+    "height": 2336,
+    "camera": "SONY ILCE-7M4",
+    "lens": "SIGMA 24-70mm F2.8 DG DN Art 019",
+    "focalLength": "57.5mm",
+    "shutterSpeed": "1/1000s",
+    "aperture": "f/2.8",
+    "iso": "ISO 100"
+  },
+  {
+    "src": "photography/pine-branch-sunset.jpg",
+    "alt": "A lone pine tree branch silhouetted against a soft, blurred sunset background.",
+    "preference": 7,
+    "width": 3120,
+    "height": 2336,
+    "camera": "SONY ILCE-7M4",
+    "lens": "SIGMA 60-600mm F4.5-6.3 DG DN OS Sports 023",
+    "focalLength": "278.2mm",
+    "shutterSpeed": "1/200s",
+    "aperture": "f/5.6",
+    "iso": "ISO 100"
+  },
+  {
+    "src": "photography/rider-by-sea.jpg",
+    "alt": "A lone rider and their motorcycle parked on a cliff overlooking the sea at sunset.",
+    "preference": 8,
+    "width": 5943,
+    "height": 2487,
+    "camera": "SONY ILCE-7M4",
+    "lens": "SIGMA 24-70mm F2.8 DG DN Art 019",
+    "focalLength": "70mm",
+    "shutterSpeed": "1/250s",
+    "aperture": "f/10",
+    "iso": "ISO 100"
+  }
+];
 
         const gallery = document.getElementById('photo-gallery');
         const placeholder = document.getElementById('gallery-placeholder');
@@ -98,41 +197,13 @@
         const lightboxCaption = document.getElementById('lightbox-caption');
         const closeBtn = document.getElementById('close-lightbox');
         
-        async function getExifData(img) {
-          return new Promise(resolve => {
-            EXIF.getData(img, function() {
-              const allTags = EXIF.getAllTags(this);
-              resolve({
-                camera: allTags.Make && allTags.Model ? `${allTags.Make} ${allTags.Model}`.trim() : 'Unknown Camera',
-                lens: allTags.LensModel || allTags.LensInfo || allTags.undefined || 'Unknown Lens',
-                focalLength: allTags.FocalLength ? `${allTags.FocalLength}mm` : '',
-                shutterSpeed: allTags.ExposureTime ? (allTags.ExposureTime < 1 ? `1/${Math.round(1/allTags.ExposureTime)}s` : `${allTags.ExposureTime}s`) : '',
-                aperture: allTags.FNumber ? `f/${allTags.FNumber}` : '',
-                iso: allTags.ISOSpeedRatings ? `ISO ${allTags.ISOSpeedRatings}` : ''
-              });
-            });
-          });
-        }
-
-        async function createRuleBasedLayout() {
-          // No longer need to set a message here, it's in the HTML.
-          
+        function createRuleBasedLayout() {
           const containerWidth = gallery.getBoundingClientRect().width;
           const gap = parseFloat(getComputedStyle(document.documentElement).fontSize);
 
-          const photosWithData = await Promise.all(photoSources
+          const photosWithData = photoSources
             .sort((a, b) => a.preference - b.preference)
-            .map(p => 
-            new Promise(async (resolve, reject) => {
-              const img = new Image();
-              img.onload = async () => {
-                const exif = await getExifData(img);
-                resolve({ ...p, ...exif, ratio: img.width / img.height });
-              };
-              img.onerror = reject;
-              img.src = p.src;
-            })
-          ));
+            .map(p => ({ ...p, ratio: p.width / p.height }));
 
           gallery.innerHTML = '';
           
@@ -200,18 +271,7 @@
         }
 
         function openLightbox(photo) {
-          let lensInfo = photo.lens; // Start with the original lens info
-
-          // Handle Fujifilm X100V fixed lens
-          if (photo.camera && photo.camera.includes('X100V')) {
-            lensInfo = '23mm F2 Fixed Lens';
-          } 
-          // Handle formatting for SIGMA lenses
-          else if (lensInfo && typeof lensInfo === 'string' && lensInfo.includes('DG DN') && lensInfo.includes('|')) {
-            lensInfo = 'SIGMA ' + lensInfo.replace(' | ', ' ');
-          }
-          
-          const captionParts = [photo.camera, lensInfo, photo.focalLength, photo.shutterSpeed, photo.aperture, photo.iso].filter(Boolean);
+          const captionParts = [photo.camera, photo.lens, photo.focalLength, photo.shutterSpeed, photo.aperture, photo.iso].filter(Boolean);
           lightboxCaption.textContent = captionParts.join(' | ');
           lightboxImg.src = photo.src;
           lightbox.style.display = 'flex';
@@ -228,9 +288,18 @@
         
         // --- Event Listeners ---
 
+        let lastWidth = window.innerWidth;
+
         // Recalculate layout on window resize (debounced)
         let resizeTimeout;
         window.addEventListener('resize', function() {
+            // On mobile, scrolling can trigger a resize event when the address bar
+            // hides/shows. We only want to re-layout if the width has changed.
+            if (window.innerWidth === lastWidth) {
+                return; // Do nothing if only height changed
+            }
+            lastWidth = window.innerWidth;
+
             clearTimeout(resizeTimeout);
             gallery.style.opacity = 0; // Hide gallery to prevent flash of unstyled content
             placeholder.style.display = 'flex'; // Show placeholder again during recalc
