@@ -23,11 +23,30 @@
         flex-grow: 1;
         margin-block-start: 0;
         margin-block-end: 0;
+        order: 1;
       }
       .bio-flex img {
         max-width: 180px;
         border-radius: 8px;
         flex-shrink: 0;
+        height: auto;
+        order: 2;
+      }
+      @media (max-width: 700px) {
+        .bio-flex {
+          display: block;
+        }
+        .bio-flex img {
+          float: right;
+          max-width: 45%;
+          height: auto;
+          margin: 0 0 0.75rem 1rem;
+        }
+        .bio-flex::after {
+          content: "";
+          display: block;
+          clear: both;
+        }
       }
       footer {
         margin-top: 2rem;
@@ -47,16 +66,16 @@
     </header>
     <main>
       <div class="bio-flex">
-        <p>
-          Hi! I'm a third-year undergraduate student at the Georgia Institute of Technology, pursuing a Bachelor of Science in Mathematics and a Bachelor of Science in Computer Science. I am fortunate to work with Prof. <a href="https://yongxin.ae.gatech.edu/" target="_blank">Yongxin Chen</a> and Prof. <a href="https://amirmohan.github.io/" target="_blank">Amirali Aghazadeh</a>. My research deals with the theoretical foundations of machine learning, with a focus on application of advanced mathematics to generative models. Outside of academics, I enjoy <a href="photography.html" target="_blank">photography</a>, <a href="writing.html" target="_blank">writing</a>, <a href="https://goodreads.com/chenthan" target="_blank">reading</a>, and bouldering. This past summer, I participated in a REU at Williams College. Next summer, I will be joining Susquehanna International Group (SIG) as a Quantitative Trading Intern.
-        </p>
         <img src="headshot.jpg" alt="Ethan Chen headshot">
+        <p>
+          Hi! I'm a third-year undergraduate at the Georgia Institute of Technology studying Mathematics and Computer Science. I work with Prof. <a href="https://yongxin.ae.gatech.edu/" target="_blank">Yongxin Chen</a> and Prof. <a href="https://amirmohan.github.io/" target="_blank">Amirali Aghazadeh</a> on the mathematics of machine learning, with a focus on generative models. Outside of research, I enjoy <a href="photography.html" target="_blank">photography</a>, <a href="writing.html" target="_blank">writing</a>, <a href="https://goodreads.com/chenthan" target="_blank">reading</a>, and bouldering. This past summer I participated in a REU at Williams College; next summer I'll be a Quantitative Trading Intern at Susquehanna International Group (SIG).
+        </p>
       </div>
 
       <section>
         <h2>Research</h2>
         <p>
-          My research focuses on developing and understanding machine learning models from mathematical first principles. In generative modeling, I have explored the theoretical foundations for diffusion models on Riemannian manifolds, designed convexity-preserving normalizing flows using optimal transport, and worked on accelerating sampling for discrete processes, particularly for structured biological data. My work also involves generalizing Wasserstein gradient flows to arbitrary f-divergence functionals for molecular dynamics, establishing nonasymptotic convergence bounds for sequential Monte Carlo samplers on non-log-concave distributions, and developing statistical methods for estimating martingale optimal transport plans.
+          My research focuses on understanding machine learning from mathematical first principles. I have worked on the theoretical foundations for diffusion models on Riemannian manifolds, convexity-preserving normalizing flows using optimal transport, and sampling acceleration for discrete processes, particularly for structured biological data. My current work involves generalizing Wasserstein gradient flows to arbitrary f-divergence functionals for molecular dynamics, establishing nonasymptotic convergence bounds for sequential Monte Carlo samplers on non-log-concave distributions, and developing statistical methods for estimating martingale optimal transport plans.
         </p>
         <p>
           I am also interested in differential geometry, natural language processing, and high-dimensional statistics.
@@ -65,7 +84,7 @@
 
       <section>
         <h2>Contact</h2>
-        <p><a href="mailto:chenethan323@gmail.com">chenethan323 [at] gmail [dot] com</a> /
+        <p>ec [at] gatech [dot] edu /
           <a href="https://www.linkedin.com/in/ethanc27/" target="_blank">linkedin</a>
         </p>
       </section>

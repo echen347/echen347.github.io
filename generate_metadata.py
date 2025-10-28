@@ -14,7 +14,9 @@ PHOTO_CONFIG = [
     { "src": "photography/osaka-lion-shrine.jpg", "alt": "The iconic stone lion head stage at Namba Yasaka Shrine in Osaka, Japan.", "preference": 5 },
     { "src": "photography/byodo-in-photographer.jpg", "alt": "A photographer captures the reflection of Byodo-in Temple (Phoenix Hall) in Uji, Japan.", "preference": 6 },
     { "src": "photography/pine-branch-sunset.jpg", "alt": "A lone pine tree branch silhouetted against a soft, blurred sunset background.", "preference": 7 },
-    { "src": "photography/rider-by-sea.jpg", "alt": "A lone rider and their motorcycle parked on a cliff overlooking the sea at sunset.", "preference": 8 }
+    { "src": "photography/rider-by-sea.jpg", "alt": "A lone rider and their motorcycle parked on a cliff overlooking the sea at sunset.", "preference": 8 },
+    { "src": "photography/wtc1.JPG", "alt": "Upward view of One World Trade Center's converging glass facade in New York City.", "preference": 9 },
+    { "src": "photography/sunset-coda.jpg", "alt": "Orange sunset sky beside a glass facade with vertical mullions.", "preference": 10 }
 ]
 
 # --- Script Logic (No need to edit below) ---
