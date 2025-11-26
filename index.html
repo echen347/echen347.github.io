@@ -539,6 +539,7 @@
         this.scale = 1;
         this.opacity = 1;
         this.childrenToSpawn = 0; // For visual resampling
+        this.nearestTargetIndex = -1; // For density control
       }
 
       updateMCMC() {
@@ -548,17 +549,19 @@
         // 1. Drift (Gradient of log-density): Move towards high probability areas
         let nearestTarget = null;
         let minDist = Infinity;
+        this.nearestTargetIndex = -1;
 
         // Find nearest target (approximate gradient)
-        for (let t of targets) {
+        targets.forEach((t, index) => {
           const dx = t.x - this.x;
           const dy = t.y - this.y;
           const d2 = dx * dx + dy * dy;
           if (d2 < minDist) {
             minDist = d2;
             nearestTarget = t;
+            this.nearestTargetIndex = index;
           }
-        }
+        });
 
         if (nearestTarget) {
           const dx = nearestTarget.x - this.x;
@@ -689,6 +692,10 @@
       const MAX_PARTICLES = 1000;
       const targetCount = Math.min(N, MAX_PARTICLES); // Downsample if too many
 
+      // Density Control: Cap per mode
+      const MAX_PER_TARGET = 350; // Max particles per mode
+      const targetCounts = new Array(targets.length).fill(0);
+
       const step = 1 / targetCount;
       let start = Math.random() * step; // Random start for the first pointer
       let cumulativeWeight = 0;
@@ -709,6 +716,16 @@
             break;
           }
         }
+
+        // Density Check: If this particle belongs to a full mode, skip spawning
+        const tIdx = particles[particleIndex].nearestTargetIndex;
+        if (tIdx !== -1) {
+          if (targetCounts[tIdx] >= MAX_PER_TARGET) {
+            continue; // Skip this spawn
+          }
+          targetCounts[tIdx]++;
+        }
+
         particles[particleIndex].childrenToSpawn++;
       }
 
