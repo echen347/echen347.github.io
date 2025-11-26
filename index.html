@@ -802,8 +802,8 @@
 
       // Background
       const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-      gradient.addColorStop(0, 'rgba(10, 15, 30, 0.15)'); // Lower opacity for longer trails
-      gradient.addColorStop(1, 'rgba(5, 5, 10, 0.15)');
+      gradient.addColorStop(0, 'rgba(10, 15, 30, 0.4)'); // Higher opacity to remove tails
+      gradient.addColorStop(1, 'rgba(5, 5, 10, 0.4)');
       ctx.fillStyle = gradient;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
