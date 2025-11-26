@@ -118,6 +118,10 @@
       color: white;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       pointer-events: auto;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1.5rem;
     }
 
     .overlay-title {
@@ -158,27 +162,35 @@
 
     /* Info Button */
     #info-btn {
-      position: absolute;
-      bottom: 2rem;
-      right: 2rem;
-      background: none;
-      border: none;
-      color: rgba(255, 255, 255, 0.4);
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: rgba(255, 255, 255, 0.6);
       cursor: pointer;
-      display: flex;
+      display: inline-flex;
       align-items: center;
+      justify-content: center;
       gap: 0.5rem;
       font-family: inherit;
       font-size: 0.85rem;
       font-weight: 300;
       pointer-events: auto;
-      transition: color 0.3s;
+      transition: all 0.3s;
       opacity: 0;
       animation: fadeIn 2s ease forwards 2s;
+      padding: 0.6rem 1.2rem;
+      border-radius: 50px;
+      backdrop-filter: blur(5px);
     }
 
     #info-btn:hover {
+      background: rgba(255, 255, 255, 0.1);
       color: white;
+      border-color: rgba(255, 255, 255, 0.3);
+      transform: translateY(-1px);
+    }
+
+    #info-btn svg {
+      pointer-events: none;
     }
 
     /* Phase Indicator */
@@ -292,18 +304,18 @@
       <div class="overlay-content">
         <h1 class="overlay-title">Ethan Chen</h1>
         <button class="enter-btn" id="enter-site-btn">Enter Profile</button>
+
+        <button id="info-btn" title="What am I looking at?">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="16" x2="12" y2="12"></line>
+            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+          </svg>
+          <span class="info-text">What is this?</span>
+        </button>
       </div>
 
-      <button id="info-btn" title="What am I looking at?">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <circle cx="12" cy="12" r="10"></circle>
-          <line x1="12" y1="16" x2="12" y2="12"></line>
-          <line x1="12" y1="8" x2="12.01" y2="8"></line>
-        </svg>
-        <span class="info-text">What is this?</span>
-      </button>
-
-      <div id="phase-indicator">Phase: MCMC (Diffusion)</div>
+      <div id="phase-indicator">Phase: MCMC</div>
     </div>
 
     <!-- Info Modal -->
@@ -318,10 +330,8 @@
         </p>
         <ul
           style="text-align: left; margin-top: 1rem; padding-left: 1.2rem; gap: 0.5rem; display: flex; flex-direction: column;">
-          <li><strong>MCMC Step</strong>: Particles evolve via Langevin dynamics, utilizing the gradient of the
-            log-density (known as the <em>score</em>) plus Gaussian noise to explore the high-probability modes of the
-            target
-            distribution.</li>
+          <li><strong>MCMC Step</strong>: Particles evolve via Langevin dynamics, utilizing the score and Gaussian noise
+            to explore the high-probability modes of the target distribution.</li>
           <li><strong>Resampling Step</strong>: A probability-weighted resampling scheme filters the particle
             approximation. Low-weight particles are killed, while high-weight particles are replicated, focusing
             computational effort on the relevant regions of the state space.</li>
@@ -451,19 +461,35 @@
     let targets = [];
     let isActive = true;
     let scale = 1;
+    let lastSpawnTime = 0; // For throttling clicks
+
+    // Check if user has already visited
+    try {
+      if (sessionStorage.getItem('introShown')) {
+        isActive = false;
+        overlay.classList.add('hidden');
+      }
+    } catch (e) {
+      console.warn('SessionStorage not available:', e);
+    }
 
     // Simulation State
     let frameCount = 0;
     const MCMC_DURATION = 180; // Frames (approx 3s)
-    const RESAMPLE_DURATION = 30; // Frames (approx 0.5s) - Shorter
+    const RESAMPLE_DURATION = 45; // Frames (approx 0.75s) - Slightly longer
     let currentPhase = 'MCMC'; // 'MCMC' or 'RESAMPLE'
 
     // Resize
     function resize() {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
-      scale = Math.min(canvas.width, canvas.height) / 800; // Base scale on 800px min dimension
-      if (isActive) {
+
+      // Non-linear scaling for mobile: 
+      // Boosts scale on small screens so elements don't vanish
+      const ratio = Math.min(canvas.width, canvas.height) / 800;
+      scale = Math.max(0.6, Math.pow(ratio, 0.7));
+
+      if (isActive && canvas.width > 0 && canvas.height > 0) {
         initTargets();
         initParticles();
       }
@@ -482,7 +508,7 @@
         this.angle = Math.random() * Math.PI * 2;
         this.vx = Math.cos(this.angle) * this.speed;
         this.vy = Math.sin(this.angle) * this.speed;
-        this.radius = (Math.random() * 30 + 50) * scale;
+        this.radius = (Math.random() * 40 + 50) * scale;
         this.phase = Math.random() * Math.PI * 2;
       }
 
@@ -599,7 +625,7 @@
           const dy = this.y - t.y;
           const dist = Math.sqrt(dx * dx + dy * dy);
           // Larger sigma so particles "visually far" (but in light) survive
-          const sigma = 80 * scale;
+          const sigma = 60 * scale;
           const w = Math.exp(-(dist * dist) / (2 * sigma * sigma));
           if (w > maxWeight) maxWeight = w;
         }
@@ -642,13 +668,19 @@
     // Click to add target
     canvas.addEventListener('mousedown', (e) => {
       if (!isActive) return;
+
+      // Throttle clicks (max 5 per second)
+      const now = Date.now();
+      if (now - lastSpawnTime < 200) return;
+      lastSpawnTime = now;
+
       const t = new Target(e.clientX, e.clientY);
       targets.push(t);
 
       // Spawn cloud of particles around new target
       // Cap immediate spawn if way too many
-      if (particles.length < 1500) {
-        for (let i = 0; i < 50; i++) {
+      if (particles.length < 1200) {
+        for (let i = 0; i < 20; i++) {
           const angle = Math.random() * Math.PI * 2;
           const r = Math.random() * 100 * scale; // Match new visual radius roughly
           const px = t.x + Math.cos(angle) * r;
@@ -664,8 +696,8 @@
 
     function initTargets() {
       targets = [];
-      // Create 3 initial targets
-      for (let i = 0; i < 3; i++) targets.push(new Target());
+      // Create 5 initial targets
+      for (let i = 0; i < 5; i++) targets.push(new Target());
     }
 
     function initParticles() {
@@ -772,6 +804,12 @@
     function animate() {
       if (!isActive) return;
 
+      // Safety check: If active but no particles (e.g. failed init), try to init
+      if (particles.length === 0 && canvas.width > 0) {
+        initTargets();
+        initParticles();
+      }
+
       frameCount++;
       const cycle = frameCount % (MCMC_DURATION + RESAMPLE_DURATION);
 
@@ -779,7 +817,7 @@
       if (cycle < MCMC_DURATION) {
         if (currentPhase !== 'MCMC') {
           currentPhase = 'MCMC';
-          phaseIndicator.textContent = "Phase: MCMC (Diffusion)";
+          phaseIndicator.textContent = "Phase: MCMC";
           phaseIndicator.style.color = "#aaa";
           // Cleanup dead particles
           particles = particles.filter(p => p.state !== 'DYING' || p.opacity > 0);
@@ -791,7 +829,7 @@
       } else {
         if (currentPhase !== 'RESAMPLING') {
           currentPhase = 'RESAMPLING';
-          phaseIndicator.textContent = "Phase: RESAMPLING (Selection)";
+          phaseIndicator.textContent = "Phase: RESAMPLING";
           phaseIndicator.style.color = "#64b5f6";
           performResampling();
         }
@@ -820,20 +858,31 @@
     }
 
     // Start
-    resize();
-    animate();
+    window.addEventListener('load', () => {
+      resize();
+      animate();
+    });
 
     // Interactions
     enterBtn.addEventListener('click', () => {
       isActive = false;
       overlay.classList.add('hidden');
+      try {
+        sessionStorage.setItem('introShown', 'true');
+      } catch (e) {
+        console.warn('SessionStorage failed:', e);
+      }
       cancelAnimationFrame(animationId);
     });
 
     showInteractiveBtn.addEventListener('click', () => {
       isActive = true;
       overlay.classList.remove('hidden');
-      resize();
+      // Force re-initialization
+      initTargets();
+      initParticles();
+      // Restart loop if needed
+      cancelAnimationFrame(animationId);
       animate();
     });
 
@@ -856,4 +905,3 @@
 </body>
 
 </html>
-```
