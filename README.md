@@ -1,25 +1,25 @@
 # Personal Academic Website
 
-This repository contains the source code for my personal academic website, available at [echen347.github.io](https://echen347.github.io).
+Source code for my personal academic website, available at [echen347.github.io](https://echen347.github.io).
 
 ## Overview
 
-The website is built with plain HTML and styled with [LaTeX.css](https://latex.vercel.app/) for a clean, academic look. It consists of the following pages:
+This site is built with **plain HTML** and **Vanilla JavaScript**, styled with [LaTeX.css](https://latex.vercel.app/) for a clean, academic aesthetic.
 
--   `index.html`: The main page, containing my bio, research interests, and contact information.
--   `writing.html`: A page featuring my posts from Substack.
--   `photography.html`: A simple gallery for my photography.
+### Features
+
+-   **Interactive SMC Visualization**: A background simulation of a **Sequential Monte Carlo** algorithm tracking a moving multimodal distribution.
+-   **Research**: Highlights my work on the mathematical foundations of machine learning.
+-   **Photography**: A masonry gallery (`photography.html`) showcasing my photos.
+-   **Writing**: My Substack posts (`writing.html`).
 
 ## Development
 
-The site is intentionally simple and lightweight. It uses a single stylesheet and does not require a build step.
+The site is lightweight with no build step.
 
-### Math Rendering
-
-Mathematical notation is rendered using [MathJax](https://www.mathjax.org/). You can write LaTeX math inside `\( ... \)` for inline math and `$$ ... $$` for display math.
+-   **Math Rendering**: Uses [MathJax](https://www.mathjax.org/).
+-   **Photography Metadata**: Run `python3 generate_metadata.py` to update photo data from EXIF tags.
 
 ## Deployment
 
-This site is automatically deployed via GitHub Pages whenever changes are pushed to the `main` branch.
-
-<keywords: Ethan Chen math machine learning gatech georgia tech >
+Automatically deployed via **GitHub Pages** on push to `main`.
