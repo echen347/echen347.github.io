@@ -330,11 +330,10 @@
         </p>
         <ul
           style="text-align: left; margin-top: 1rem; padding-left: 1.2rem; gap: 0.5rem; display: flex; flex-direction: column;">
-          <li><strong>MCMC Step</strong>: Particles evolve via Langevin dynamics, utilizing the score and Gaussian noise
-            to explore the high-probability modes of the target distribution.</li>
+          <li><strong>MCMC Step</strong>: Particles evolve via Langevin dynamics. The score and Gaussian noise
+            are used to explore the high-probability modes of the target distribution.</li>
           <li><strong>Resampling Step</strong>: A probability-weighted resampling scheme filters the particle
-            approximation. Low-weight particles are killed, while high-weight particles are replicated, focusing
-            computational effort on the relevant regions of the state space.</li>
+            approximation. Low-weight particles are removed, while high-weight particles are duplicated.</li>
           <li><strong>Targets</strong>: Represent the unnormalized modes of the hidden distribution. <em>Click to add a
               new mode.</em></li>
         </ul>
@@ -454,7 +453,7 @@
     </section>
   </main>
   <footer>
-    <p>&copy; 2026 Ethan Chen. All rights reserved. Last updated: 3/2/2026</p>
+    <p>&copy; 2026 Ethan Chen. All rights reserved. Last updated: 3/26/2026</p>
     <p>Powered by <a href="https://latex.vercel.app/" target="_blank">LaTeX.css</a></p>
   </footer>
 
