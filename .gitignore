@@ -1,0 +1,13 @@
+# macOS
+.DS_Store
+
+# Python (scripts/)
+__pycache__/
+*.pyc
+.python-version
+.venv/
+venv/
+
+# Claude Code (local settings + brainstorming session artifacts)
+.claude/
+.superpowers/
