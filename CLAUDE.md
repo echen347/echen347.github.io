@@ -23,6 +23,7 @@ Pages:
 - `photography.html` — masonry gallery. See Photography pipeline below.
 - `writing.html` — Substack post embed. Reachable only by direct URL; intentionally not in the top nav.
 - `mot/index.html`, `dhmproposal/index.html` — meta-refresh redirect shims that forward to PDFs under `pdfs/`, giving clean shareable URLs like `/mot`.
+- `trading.html` — distinct redirect: meta-refreshes to an IP-hosted TGT QR trading dashboard. Third-party, not part of the PDF shim family.
 
 Pieces that span multiple files:
 
