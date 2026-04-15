@@ -1,13 +1,16 @@
 # macOS
 .DS_Store
 
-# Python (scripts/)
+# Python
 __pycache__/
 *.pyc
 .python-version
 .venv/
 venv/
 
-# Claude Code (local settings + brainstorming session artifacts)
+# Claude Code (local config, memory, brainstorming, remember-skill, project memory)
 .claude/
 .superpowers/
+.remember/
+CLAUDE.md
+music-viz-notes.md
