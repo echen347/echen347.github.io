@@ -1,0 +1,7 @@
+/* chaewon/chaewon.css */
+/* All styles below are scoped under body.chaewon-mode so they are inert
+   when the mode is off. See docs/superpowers/specs/2026-04-22-chaewon-mode-design.md */
+
+body.chaewon-mode {
+  /* Stub — actual styles added in Phase 3 */
+}
