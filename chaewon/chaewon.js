@@ -37,12 +37,40 @@
     // Subsequent phases: cleanup listeners, restore SMC rendering, etc.
   }
 
+  // ---------- Keyboard buffer trigger ----------
+  const TRIGGERS = ['chaewon']; // sub-eggs added in Phase 5
+  const BUFFER_MAX = 16;
+
+  function handleKeydown(e) {
+    const key = e.key;
+    if (typeof key !== 'string' || key.length !== 1) return;
+    const normalized = key.toLowerCase();
+    if (!/^[a-z0-9]$/.test(normalized)) return;
+    state.keyBuffer = (state.keyBuffer + normalized).slice(-BUFFER_MAX);
+    const sorted = [...TRIGGERS].sort((a, b) => b.length - a.length);
+    for (const t of sorted) {
+      if (state.keyBuffer.endsWith(t)) {
+        if (t === 'chaewon') {
+          if (state.active) deactivate();
+          else activate();
+        } else {
+          handleSubEgg(t);
+        }
+        return;
+      }
+    }
+  }
+
+  function handleSubEgg(name) {
+    // stub for Phase 5
+  }
+
   // ---------- Init ----------
   function init() {
     if (sessionStorage.getItem('chaewonMode') === '1') {
       activate({ skipCinematic: true });
     }
-    // Triggers wired in Task 1.4.
+    document.addEventListener('keydown', handleKeydown);
   }
 
   if (document.readyState === 'loading') {
