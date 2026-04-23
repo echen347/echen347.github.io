@@ -24,7 +24,7 @@
     const { skipCinematic = false } = opts;
     void skipCinematic; // consumed by cinematic logic wired in Task 7.1
     document.body.classList.add('chaewon-mode');
-    sessionStorage.setItem('chaewonMode', '1');
+    setStoredActive();
     state.active = true;
     ensureExitButton();
     // Subsequent phases will hook in here: assets, marquee, bubbles, etc.
@@ -33,7 +33,7 @@
   function deactivate() {
     if (!state.active) return;
     document.body.classList.remove('chaewon-mode');
-    sessionStorage.removeItem('chaewonMode');
+    clearStoredActive();
     state.active = false;
     removeExitButton();
     // Subsequent phases: cleanup listeners, restore SMC rendering, etc.
@@ -44,6 +44,23 @@
   const BUFFER_MAX = 16;
   // Pre-sorted longest-first to avoid shadowing during match. Recomputed only at module load.
   const SORTED_TRIGGERS = [...TRIGGERS].sort((a, b) => b.length - a.length);
+
+  // ---------- Persistence helpers — mirror tests/chaewon/persistence.test.js ----------
+  const SESSION_KEY = 'chaewonMode';
+  const FIRST_SEEN_KEY = 'chaewonModeFirstSeen';
+  const HUNT_KEY = 'chaewonHuntProgress';
+
+  function isStoredActive() { return sessionStorage.getItem(SESSION_KEY) === '1'; }
+  function setStoredActive() { sessionStorage.setItem(SESSION_KEY, '1'); }
+  function clearStoredActive() { sessionStorage.removeItem(SESSION_KEY); }
+  function hasFirstSeen() { return localStorage.getItem(FIRST_SEEN_KEY) === '1'; }
+  function markFirstSeen() { localStorage.setItem(FIRST_SEEN_KEY, '1'); }
+  function getHuntProgress() {
+    const v = sessionStorage.getItem(HUNT_KEY);
+    if (v == null) return 0;
+    return Math.max(0, Math.min(5, parseInt(v, 10) || 0));
+  }
+  function setHuntProgress(n) { sessionStorage.setItem(HUNT_KEY, String(n)); }
 
   function handleKeydown(e) {
     const key = e.key;
@@ -93,7 +110,7 @@
 
   // ---------- Init ----------
   function init() {
-    if (sessionStorage.getItem('chaewonMode') === '1') {
+    if (isStoredActive()) {
       activate({ skipCinematic: true });
     }
     document.addEventListener('keydown', handleKeydown);
