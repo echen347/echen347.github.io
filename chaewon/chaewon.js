@@ -25,6 +25,7 @@
     void skipCinematic; // consumed by cinematic logic wired in Task 7.1
     document.body.classList.add('chaewon-mode');
     sessionStorage.setItem('chaewonMode', '1');
+    ensureExitButton();
     state.active = true;
     // Subsequent phases will hook in here: assets, marquee, bubbles, etc.
   }
@@ -33,6 +34,7 @@
     if (!state.active) return;
     document.body.classList.remove('chaewon-mode');
     sessionStorage.removeItem('chaewonMode');
+    removeExitButton();
     state.active = false;
     // Subsequent phases: cleanup listeners, restore SMC rendering, etc.
   }
@@ -67,6 +69,25 @@
     // Stub — Phase 5 (Task 5.6) implements the visual flourishes per sub-egg.
     // The warn helps debugging if a sub-egg trigger is added prematurely.
     console.warn('[ChaewonMode] sub-egg matched but handler not yet implemented:', name);
+  }
+
+  // ---------- Exit button ----------
+  let exitBtn = null;
+
+  function ensureExitButton() {
+    if (exitBtn) return;
+    exitBtn = document.createElement('button');
+    exitBtn.className = 'chaewon-exit';
+    exitBtn.textContent = '× exit ♡';
+    exitBtn.setAttribute('aria-label', 'Exit Chaewon Mode');
+    exitBtn.addEventListener('click', deactivate);
+    document.body.appendChild(exitBtn);
+  }
+
+  function removeExitButton() {
+    if (!exitBtn) return;
+    exitBtn.remove();
+    exitBtn = null;
   }
 
   // ---------- Init ----------
