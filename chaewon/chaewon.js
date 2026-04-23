@@ -25,8 +25,8 @@
     void skipCinematic; // consumed by cinematic logic wired in Task 7.1
     document.body.classList.add('chaewon-mode');
     sessionStorage.setItem('chaewonMode', '1');
-    ensureExitButton();
     state.active = true;
+    ensureExitButton();
     // Subsequent phases will hook in here: assets, marquee, bubbles, etc.
   }
 
@@ -34,8 +34,8 @@
     if (!state.active) return;
     document.body.classList.remove('chaewon-mode');
     sessionStorage.removeItem('chaewonMode');
-    removeExitButton();
     state.active = false;
+    removeExitButton();
     // Subsequent phases: cleanup listeners, restore SMC rendering, etc.
   }
 
@@ -77,6 +77,7 @@
   function ensureExitButton() {
     if (exitBtn) return;
     exitBtn = document.createElement('button');
+    exitBtn.type = 'button';
     exitBtn.className = 'chaewon-exit';
     exitBtn.textContent = '× exit ♡';
     exitBtn.setAttribute('aria-label', 'Exit Chaewon Mode');
