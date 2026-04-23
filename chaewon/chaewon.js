@@ -40,6 +40,8 @@
   // ---------- Keyboard buffer trigger ----------
   const TRIGGERS = ['chaewon']; // sub-eggs added in Phase 5
   const BUFFER_MAX = 16;
+  // Pre-sorted longest-first to avoid shadowing during match. Recomputed only at module load.
+  const SORTED_TRIGGERS = [...TRIGGERS].sort((a, b) => b.length - a.length);
 
   function handleKeydown(e) {
     const key = e.key;
@@ -47,9 +49,9 @@
     const normalized = key.toLowerCase();
     if (!/^[a-z0-9]$/.test(normalized)) return;
     state.keyBuffer = (state.keyBuffer + normalized).slice(-BUFFER_MAX);
-    const sorted = [...TRIGGERS].sort((a, b) => b.length - a.length);
-    for (const t of sorted) {
+    for (const t of SORTED_TRIGGERS) {
       if (state.keyBuffer.endsWith(t)) {
+        state.keyBuffer = '';   // reset to prevent ghost matches
         if (t === 'chaewon') {
           if (state.active) deactivate();
           else activate();
@@ -62,7 +64,9 @@
   }
 
   function handleSubEgg(name) {
-    // stub for Phase 5
+    // Stub — Phase 5 (Task 5.6) implements the visual flourishes per sub-egg.
+    // The warn helps debugging if a sub-egg trigger is added prematurely.
+    console.warn('[ChaewonMode] sub-egg matched but handler not yet implemented:', name);
   }
 
   // ---------- Init ----------

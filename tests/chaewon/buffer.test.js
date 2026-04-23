@@ -15,7 +15,7 @@ function processKey(buffer, key, triggers, maxLen = 16) {
   const sorted = [...triggers].sort((a, b) => b.length - a.length);
   for (const t of sorted) {
     if (newBuffer.endsWith(t)) {
-      return { buffer: newBuffer, matched: t };
+      return { buffer: '', matched: t };
     }
   }
   return { buffer: newBuffer, matched: null };
@@ -78,6 +78,19 @@ test('buffer matches sub-egg "fearless" (longer than chaewon)', () => {
     matched = r.matched;
   }
   assert.strictEqual(matched, 'fearless');
+});
+
+test('buffer is cleared after a match (prevents ghost matches)', () => {
+  let buf = '';
+  for (const c of 'chaewon') {
+    buf = processKey(buf, c, ['chaewon']).buffer;
+  }
+  // After match, buffer should be empty so subsequent keys start fresh
+  assert.strictEqual(buf, '');
+  // A subsequent key should land in a clean buffer
+  const r = processKey(buf, 'x', ['chaewon']);
+  assert.strictEqual(r.buffer, 'x');
+  assert.strictEqual(r.matched, null);
 });
 
 module.exports = { processKey };

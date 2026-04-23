@@ -20,4 +20,4 @@ Edit `content/chaewon/academic.json` (course code → string) or
 
 ## Adding sub-eggs (typed song names)
 
-Edit the `SUB_EGGS` array in `chaewon/chaewon.js` and add a CSS class hook in `chaewon/chaewon.css`.
+Edit the `TRIGGERS` array in `chaewon/chaewon.js` and add a CSS class hook in `chaewon/chaewon.css`.
