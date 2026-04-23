@@ -20,7 +20,9 @@
 
   // ---------- Lifecycle ----------
   function activate(opts = {}) {
+    if (state.active) return;
     const { skipCinematic = false } = opts;
+    void skipCinematic; // consumed by cinematic logic wired in Task 7.1
     document.body.classList.add('chaewon-mode');
     sessionStorage.setItem('chaewonMode', '1');
     state.active = true;
@@ -28,6 +30,7 @@
   }
 
   function deactivate() {
+    if (!state.active) return;
     document.body.classList.remove('chaewon-mode');
     sessionStorage.removeItem('chaewonMode');
     state.active = false;

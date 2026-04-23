@@ -6,7 +6,7 @@ Chaewon Mode — site-wide stan-coded easter egg.
 - **Plan:** `docs/superpowers/plans/2026-04-22-chaewon-mode.md`
 - **Activate (desktop):** type `chaewon` anywhere on the site.
 - **Activate (mobile):** find 5 hearts hidden across pages and tap them in order.
-- **Exit:** click the small `× exit ♡` button (top-right) or type `chaewon` again.
+- **Exit:** click the `× exit ♡` button (injected by `chaewon.js` into the top-right when mode is active) or type `chaewon` again.
 
 ## Adding assets
 
