@@ -158,21 +158,16 @@
   }
 
   // ---------- Card markers ----------
-  // Mark major content blocks as cards. Heuristic: direct children of <main>,
-  // plus key article-like containers. Idempotent.
+  // Mark major content blocks as cards. Idempotent: skips headings already
+  // inside a chaewon-card, so calling this twice doesn't produce nested cards.
   function applyCardClassMarkers() {
-    const candidates = document.querySelectorAll(
-      'main > p, main > div, main > section, main > article, main > ul, main > h2, main > h3'
-    );
-    // Group consecutive sibling content under a synthetic card wrapper.
-    // Simpler approach for v1: just tag heading-led blocks directly.
     document.querySelectorAll('main h2, main h3').forEach(h => {
-      // Wrap from this heading up to (but not including) the next sibling heading
-      let wrapper = document.createElement('div');
+      // Skip if already wrapped (idempotency + safety against unexpected DOM shapes)
+      if (h.closest('.chaewon-card')) return;
+      const wrapper = document.createElement('div');
       wrapper.className = 'chaewon-card';
       const parent = h.parentNode;
-      const startIdx = Array.from(parent.children).indexOf(h);
-      // Collect siblings until next h2/h3 of same or higher level
+      // Collect siblings until next h1/h2/h3
       const collected = [h];
       let next = h.nextElementSibling;
       while (next && !/^H[123]$/.test(next.tagName)) {
