@@ -29,6 +29,7 @@
     ensureExitButton();
     applyCardClassMarkers();
     attachAllCardTilts();
+    resetIdleTimer();
     ensureMarquees();
     ensureBackground();
     decorateHeadshot();
@@ -45,6 +46,7 @@
     removeMarquees();
     removeBackground();
     undecorateHeadshot();
+    if (_idleTimer) { clearTimeout(_idleTimer); _idleTimer = null; }
     // Subsequent phases: cleanup listeners, restore SMC rendering, etc.
   }
 
@@ -384,6 +386,45 @@
     document.querySelectorAll('.chaewon-card').forEach(attachCardTilt);
   }
 
+  // ---------- Idle attention-grab popup (Phase 5.4) ----------
+  // Placeholder lines — see spec §10 for tone framing
+  const IDLE_LINES = [
+    'WHERE U GOING?? KEEP STANNING ♡',
+    'CHAEWON MISSES YOU ♡',
+    'STREAM CRAZY!!! ♡',
+    'COME BACK!! ♡♡♡',
+  ];
+
+  let _idleTimer = null;
+  let _idleFired = false;
+  function resetIdleTimer() {
+    if (sessionStorage.getItem('chaewonIdleFired') === '1') {
+      _idleFired = true;
+    }
+    if (_idleFired || !state.active) return;
+    if (_idleTimer) clearTimeout(_idleTimer);
+    _idleTimer = setTimeout(fireIdlePopup, 30000);
+  }
+  async function fireIdlePopup() {
+    _idleFired = true;
+    sessionStorage.setItem('chaewonIdleFired', '1');
+    const manifest = await loadManifest();
+    const photo = manifest.bubbles.length ? pickRandom(manifest.bubbles, 1)[0] : null;
+    const line = IDLE_LINES[Math.floor(Math.random() * IDLE_LINES.length)];
+    const el = document.createElement('div');
+    el.className = 'chaewon-idle-popup';
+    el.innerHTML = `
+      ${photo ? `<img src="${assetUrl(photo.file)}" alt="${photo.alt || 'chaewon'}">` : ''}
+      <div class="chaewon-idle-text">${line}</div>
+    `;
+    document.body.appendChild(el);
+    setTimeout(() => el.classList.add('chaewon-idle-leaving'), 4000);
+    setTimeout(() => el.remove(), 4600);
+  }
+  function handleAnyActivity() {
+    resetIdleTimer();
+  }
+
   // ---------- Init ----------
   function init() {
     if (isStoredActive()) {
@@ -392,6 +433,10 @@
     document.addEventListener('keydown', handleKeydown);
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('click', handleClickBurst);
+    document.addEventListener('mousemove', handleAnyActivity);
+    document.addEventListener('keydown', handleAnyActivity);
+    document.addEventListener('scroll', handleAnyActivity);
+    document.addEventListener('touchstart', handleAnyActivity);
   }
 
   if (document.readyState === 'loading') {

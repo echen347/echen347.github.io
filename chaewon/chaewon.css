@@ -308,3 +308,44 @@ body.chaewon-mode .chaewon-card {
 body.chaewon-mode .chaewon-card:hover {
   box-shadow: 0 12px 32px rgba(255, 100, 140, 0.18);
 }
+
+body.chaewon-mode .chaewon-idle-popup {
+  position: fixed;
+  bottom: 60px;
+  right: 60px;
+  z-index: 200;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 16px;
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 320px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.6);
+  animation: chaewon-idle-slide-in 0.4s ease-out;
+}
+body.chaewon-mode .chaewon-idle-popup img {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid white;
+}
+body.chaewon-mode .chaewon-idle-text {
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+body.chaewon-mode .chaewon-idle-popup.chaewon-idle-leaving {
+  animation: chaewon-idle-slide-out 0.5s ease-in forwards;
+}
+@keyframes chaewon-idle-slide-in {
+  from { opacity: 0; transform: translateX(120%); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes chaewon-idle-slide-out {
+  from { opacity: 1; transform: translateX(0); }
+  to   { opacity: 0; transform: translateX(120%); }
+}
