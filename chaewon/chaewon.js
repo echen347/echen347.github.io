@@ -209,10 +209,15 @@
   }
 
   function spawnLasers() {
-    // Wrap all beams in a single stage div with `isolation: isolate` so the
-    // mix-blend-mode: screen on each beam blends only with sibling beams,
-    // not with the page content underneath (which was causing the wallpaper
-    // letters to modulate beam brightness and look like horizontal stripes).
+    // Dim overlay — fades the page underneath so the laser beams stand out
+    // (mimics how a concert venue darkens during a laser show).
+    const dim = document.createElement('div');
+    dim.className = 'chaewon-laser-dim';
+    document.body.appendChild(dim);
+
+    // Stage wraps all 8 beams in an isolated stacking context so mix-blend-mode
+    // on the beams blends them with each other (overlap brightens) but doesn't
+    // pull color from the page beneath the stage.
     const stage = document.createElement('div');
     stage.className = 'chaewon-laser-stage';
 
@@ -237,7 +242,10 @@
     });
 
     document.body.appendChild(stage);
-    setTimeout(() => stage.remove(), 3200);
+    setTimeout(() => {
+      stage.remove();
+      dim.remove();
+    }, 3200);
   }
 
   // ---------- Exit button ----------

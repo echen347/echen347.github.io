@@ -384,6 +384,25 @@ body.chaewon-mode.chaewon-egg-crazy::after {
   100% { transform: translate(var(--sway), 115vh) rotate(var(--rot)); opacity: 0.6; }
 }
 
+/* Dim overlay shown during the laser show — fades the page (and the chaewon
+   wallpaper) toward black so the beams pop. Sits between page content (z<999)
+   and the laser stage (z=1000). */
+.chaewon-laser-dim {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 999;
+  background: #000;
+  opacity: 0;
+  animation: chaewon-laser-dim-in 2.6s ease-in-out 1 forwards;
+}
+@keyframes chaewon-laser-dim-in {
+  0%   { opacity: 0; }
+  18%  { opacity: 0.65; }
+  82%  { opacity: 0.65; }
+  100% { opacity: 0; }
+}
+
 /* ANTIFRAGILE: concert-style laser show. Two projectors at top-left and top-right,
    each emitting multiple cone-shaped beams that sweep back and forth in a fan
    motion. Beams are JS-spawned (.chaewon-laser-beam) so each can have its own
