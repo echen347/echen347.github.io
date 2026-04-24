@@ -160,10 +160,51 @@
   }
 
   function handleSubEgg(name) {
-    if (!state.active) return; // sub-eggs only fire while in Chaewon mode
+    if (!state.active) return;
+    // Add a body class for CSS-only eggs (CRAZY, EASY, ANTIFRAGILE)
     const cls = `chaewon-egg-${name}`;
     document.body.classList.add(cls);
     setTimeout(() => document.body.classList.remove(cls), 3000);
+    // Some eggs also spawn DOM particles
+    if (name === 'fearless') spawnPetals();
+    else if (name === 'perfectnight') spawnStars();
+  }
+
+  function spawnPetals() {
+    const count = 40;
+    for (let i = 0; i < count; i++) {
+      const petal = document.createElement('span');
+      petal.className = 'chaewon-petal';
+      petal.textContent = '🌸';
+      petal.style.left = `${Math.random() * 100}vw`;
+      petal.style.fontSize = `${14 + Math.random() * 22}px`;
+      const duration = 2.8 + Math.random() * 2.2; // 2.8s to 5s
+      const delay = Math.random() * 1.5;
+      const swayDir = Math.random() < 0.5 ? 1 : -1;
+      const swayAmount = 30 + Math.random() * 60; // 30-90 px
+      petal.style.setProperty('--sway', `${swayDir * swayAmount}px`);
+      petal.style.setProperty('--rot', `${(Math.random() < 0.5 ? -1 : 1) * (180 + Math.random() * 540)}deg`);
+      petal.style.animation = `chaewon-petal-drift ${duration}s linear ${delay}s forwards`;
+      document.body.appendChild(petal);
+      setTimeout(() => petal.remove(), (duration + delay) * 1000 + 200);
+    }
+  }
+
+  function spawnStars() {
+    const count = 60;
+    for (let i = 0; i < count; i++) {
+      const star = document.createElement('span');
+      star.className = 'chaewon-star';
+      star.textContent = Math.random() < 0.5 ? '✦' : '✧';
+      star.style.left = `${Math.random() * 100}vw`;
+      star.style.top = `${Math.random() * 100}vh`;
+      star.style.fontSize = `${8 + Math.random() * 20}px`;
+      const duration = 0.8 + Math.random() * 1.8; // 0.8s to 2.6s per twinkle
+      const delay = Math.random() * 1.8;
+      star.style.animation = `chaewon-star-twinkle ${duration}s ease-in-out ${delay}s forwards`;
+      document.body.appendChild(star);
+      setTimeout(() => star.remove(), (duration + delay) * 1000 + 200);
+    }
   }
 
   // ---------- Exit button ----------
