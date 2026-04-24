@@ -232,3 +232,34 @@ body.chaewon-mode .chaewon-headshot-sticker {
   0%, 100% { transform: scale(1); }
   50%      { transform: scale(1.15); }
 }
+
+/* Force headshot to a circular fixed size, defeating .bio-flex img and any
+   LaTeX.css max-width constraints. */
+body.chaewon-mode img.chaewon-headshot {
+  width: 200px !important;
+  height: 200px !important;
+  min-width: 200px !important;
+  max-width: 200px !important;
+  max-height: 200px !important;
+  object-fit: cover;
+  aspect-ratio: 1 / 1;
+  flex-shrink: 0;
+}
+
+/* Preserve the original bio-flex layout (headshot on the right) when our
+   span wrap becomes a flex item. */
+body.chaewon-mode .chaewon-headshot-wrap {
+  order: 2;
+  flex-shrink: 0;
+}
+
+/* Zero out top-margin on the first child of any chaewon card so headings
+   don't render with a big empty gap above them inside the card. */
+body.chaewon-mode .chaewon-card > *:first-child {
+  margin-top: 0;
+}
+
+/* Also zero out trailing margin-bottom on the last child for symmetry. */
+body.chaewon-mode .chaewon-card > *:last-child {
+  margin-bottom: 0;
+}
