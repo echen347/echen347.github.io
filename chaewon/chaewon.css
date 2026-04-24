@@ -285,3 +285,18 @@ body.chaewon-mode .chaewon-trail-heart {
   0%   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
   100% { opacity: 0; transform: translate(-50%, -180%) scale(0.6); }
 }
+
+body.chaewon-mode .chaewon-burst-heart {
+  position: fixed;
+  pointer-events: none;
+  z-index: 99;
+  font-size: 18px;
+  color: #ff3388;
+  transform: translate(-50%, -50%);
+  animation: chaewon-burst-fly 0.8s ease-out forwards;
+}
+@keyframes chaewon-burst-fly {
+  0%   { opacity: 1; transform: translate(-50%, -50%) scale(0.6); }
+  60%  { opacity: 0.9; }
+  100% { opacity: 0; transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(1.2); }
+}

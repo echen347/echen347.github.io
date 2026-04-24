@@ -339,6 +339,29 @@
     spawnTrailHeart(e.clientX, e.clientY);
   }
 
+  function spawnClickBurst(x, y) {
+    const count = 7;
+    for (let i = 0; i < count; i++) {
+      const heart = document.createElement('span');
+      heart.className = 'chaewon-burst-heart';
+      heart.textContent = '♡';
+      heart.style.left = `${x}px`;
+      heart.style.top = `${y}px`;
+      const angle = (Math.PI * 2 * i) / count + Math.random() * 0.5;
+      const dist = 40 + Math.random() * 30;
+      heart.style.setProperty('--dx', `${Math.cos(angle) * dist}px`);
+      heart.style.setProperty('--dy', `${Math.sin(angle) * dist}px`);
+      document.body.appendChild(heart);
+      setTimeout(() => heart.remove(), 800);
+    }
+  }
+  function handleClickBurst(e) {
+    if (!state.active) return;
+    // Avoid bursting on exit button (already has its own feedback)
+    if (e.target.closest('.chaewon-exit')) return;
+    spawnClickBurst(e.clientX, e.clientY);
+  }
+
   // ---------- Init ----------
   function init() {
     if (isStoredActive()) {
@@ -346,6 +369,7 @@
     }
     document.addEventListener('keydown', handleKeydown);
     document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('click', handleClickBurst);
   }
 
   if (document.readyState === 'loading') {
