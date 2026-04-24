@@ -62,6 +62,52 @@
   }
   function setHuntProgress(n) { sessionStorage.setItem(HUNT_KEY, String(n)); }
 
+  // ---------- Asset loading — cached for the session ----------
+  let _manifestCache = null;
+
+  function parseManifest(data) {
+    const out = { bubbles: [], gifs: [], mascots: [], stickers: [] };
+    for (const cat of Object.keys(out)) {
+      if (Array.isArray(data[cat])) {
+        out[cat] = data[cat].filter(e => e && typeof e.file === 'string');
+      }
+    }
+    return out;
+  }
+
+  async function loadManifest() {
+    if (_manifestCache) return _manifestCache;
+    try {
+      const res = await fetch('/images/chaewon/manifest.json', { cache: 'no-cache' });
+      if (!res.ok) throw new Error(`manifest HTTP ${res.status}`);
+      const data = await res.json();
+      _manifestCache = parseManifest(data);
+      return _manifestCache;
+    } catch (err) {
+      console.warn('[chaewon] manifest load failed; using empty asset set:', err);
+      _manifestCache = { bubbles: [], gifs: [], mascots: [], stickers: [] };
+      return _manifestCache;
+    }
+  }
+
+  function pickRandom(arr, n) {
+    if (n >= arr.length) return [...arr];
+    const copy = [...arr];
+    for (let i = 0; i < n; i++) {
+      const j = i + Math.floor(Math.random() * (copy.length - i));
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy.slice(0, n);
+  }
+
+  function assetUrl(file) {
+    return `/images/chaewon/${file}`;
+  }
+
+  // Expose for inspection / debugging
+  window.ChaewonMode.loadManifest = loadManifest;
+  window.ChaewonMode.assetUrl = assetUrl;
+
   function handleKeydown(e) {
     const key = e.key;
     if (typeof key !== 'string' || key.length !== 1) return;
