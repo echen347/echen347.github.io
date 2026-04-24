@@ -63,10 +63,13 @@
   ];
 
   function buildMarqueeContent() {
-    // Each phrase separated by ♡♡♡; loop the whole sequence twice for seamless scroll
+    // Each phrase separated by ♡♡♡; repeat the phrase set 3x within "single" so
+    // even at frame 0 the doubled content overflows wide viewports. Then doubled
+    // for seamless infinite loop (animation translates 0 → -50%).
     const sep = ' ♡♡♡ ';
-    const single = MARQUEE_PHRASES.map(p => p).join(sep) + sep;
-    return single + single; // duplicated for seamless infinite loop
+    const oneRound = MARQUEE_PHRASES.join(sep) + sep;
+    const single = oneRound + oneRound + oneRound; // 3 phrase-rounds per "single"
+    return single + single; // 6 phrase-rounds total — fills any reasonable viewport
   }
 
   // ---------- Persistence helpers — mirror tests/chaewon/persistence.test.js ----------
@@ -261,20 +264,25 @@
     bg.id = 'chaewon-bg';
     bg.className = 'chaewon-bg';
     bg.setAttribute('aria-hidden', 'true');
-    const text = 'I LOVE CHAEWON';
-    // 7 stacked rows for visual fill
-    for (let row = 0; row < 7; row++) {
+    // Each row's text — repeat the phrase to widen each row so corners stay covered
+    // even at low scale (rotation alone leaves narrow rows short of the corners).
+    const rowText = 'I LOVE CHAEWON I LOVE CHAEWON';
+    const rows = 12; // dense vertical fill
+    const stagger = 0.06; // seconds between adjacent letters
+    for (let row = 0; row < rows; row++) {
       const rowEl = document.createElement('div');
       rowEl.className = 'chaewon-bg-row';
-      [...text].forEach((ch, i) => {
+      [...rowText].forEach((ch, i) => {
         const span = document.createElement('span');
         span.textContent = ch;
-        span.style.animationDelay = `${(row * text.length + i) * 0.12}s`;
+        // NEGATIVE delay: animation is already mid-cycle at t=0, so every letter
+        // is colored from the very first frame. Stagger preserves the wave effect.
+        const delay = -((row * rowText.length + i) * stagger);
+        span.style.animationDelay = `${delay}s`;
         rowEl.appendChild(span);
       });
       bg.appendChild(rowEl);
     }
-    // Insert as first child of body so it's behind everything
     document.body.insertBefore(bg, document.body.firstChild);
   }
 
