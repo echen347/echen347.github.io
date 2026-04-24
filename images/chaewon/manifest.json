@@ -1,7 +1,11 @@
 {
   "$schema_comment": "categories: bubbles (circular-friendly photos), gifs (animated), mascots (cartoon avatars), stickers (decorative). Add new files to the appropriate folder and append an entry here. The loader picks them up on next activation.",
   "bubbles": [],
-  "gifs": [],
+  "gifs": [
+    { "file": "gifs/heart-wave.gif", "alt": "Chaewon heart wave" },
+    { "file": "gifs/side-eye.gif", "alt": "Chaewon side eye" },
+    { "file": "gifs/dance.gif", "alt": "Chaewon dance" }
+  ],
   "mascots": [],
   "stickers": []
 }
