@@ -395,6 +395,32 @@
     'COME BACK!! ♡♡♡',
   ];
 
+  // ---------- Heading hover stan-translations (Phase 5.5) ----------
+  const HEADING_TRANSLATIONS = {
+    'publications': 'WHAT I DO WHEN NOT STANNING CHAEWON ♡',
+    'research': 'BETWEEN STREAMING CRAZY ON REPEAT ♡',
+    'contact': 'DM ME UR CHAEWON FANCAMS ♡',
+    'coursework': 'STUDYING WHILE LISTENING TO ANTIFRAGILE ♡',
+    'in progress': 'STUDYING WHILE LISTENING TO ANTIFRAGILE ♡',
+    'mathematics': 'MATH WHILE STREAMING CRAZY ♡',
+    'cs/ece': 'CODING WITH CHAEWON ON LOOP ♡',
+  };
+  function lookupTranslation(text) {
+    if (!text) return null;
+    return HEADING_TRANSLATIONS[text.trim().toLowerCase()] || null;
+  }
+  function attachHeadingTranslations() {
+    document.querySelectorAll('h1, h2, h3, h4').forEach(h => {
+      const original = h.textContent;
+      const translated = lookupTranslation(original);
+      if (!translated) return;
+      h.dataset.chaewonOriginal = original;
+      h.dataset.chaewonTranslated = translated;
+      h.addEventListener('mouseenter', () => { if (state.active) h.textContent = translated; });
+      h.addEventListener('mouseleave', () => { if (state.active) h.textContent = original; });
+    });
+  }
+
   let _idleTimer = null;
   let _idleFired = false;
   function resetIdleTimer() {
@@ -437,6 +463,7 @@
     document.addEventListener('keydown', handleAnyActivity);
     document.addEventListener('scroll', handleAnyActivity);
     document.addEventListener('touchstart', handleAnyActivity);
+    attachHeadingTranslations();
   }
 
   if (document.readyState === 'loading') {
