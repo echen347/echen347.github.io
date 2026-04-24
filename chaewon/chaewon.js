@@ -186,28 +186,37 @@
     const main = document.querySelector('main');
     if (!main) return;
 
-    // Pass 1: wrap any leading content (before the first h2/h3/h4) in a "lead" card.
-    // This handles index.html's bio-flex (no preceding heading) and similar intro paragraphs.
-    const firstHeading = main.querySelector('h2, h3, h4');
-    const leadChildren = [];
-    for (const child of Array.from(main.children)) {
-      if (child === firstHeading) break;
-      leadChildren.push(child);
+    // Pass 1: wrap any leading direct children of main (those before the first
+    // direct child that is OR contains a heading) in a "lead" card.
+    // This handles index.html's bio-flex (no preceding heading).
+    const directChildren = Array.from(main.children);
+    let firstHeadingChildIdx = -1;
+    for (let i = 0; i < directChildren.length; i++) {
+      const child = directChildren[i];
+      if (/^H[1-6]$/.test(child.tagName) || child.querySelector('h1, h2, h3, h4, h5, h6')) {
+        firstHeadingChildIdx = i;
+        break;
+      }
     }
+    const leadEnd = firstHeadingChildIdx >= 0 ? directChildren[firstHeadingChildIdx] : null;
+    const leadChildren = firstHeadingChildIdx >= 0
+      ? directChildren.slice(0, firstHeadingChildIdx)
+      : directChildren.slice();
     if (leadChildren.length > 0 && !leadChildren[0].closest('.chaewon-card')) {
       const leadWrap = document.createElement('div');
       leadWrap.className = 'chaewon-card';
-      main.insertBefore(leadWrap, firstHeading || null);
+      main.insertBefore(leadWrap, leadEnd);  // leadEnd is a direct child of main, or null (= append)
       for (const el of leadChildren) leadWrap.appendChild(el);
     }
 
     // Pass 2: wrap each heading-led block (h2/h3/h4) in a card.
+    // parent.insertBefore is safe here because h.parentNode is by definition
+    // the correct parent for h.
     document.querySelectorAll('main h2, main h3, main h4').forEach(h => {
       if (h.closest('.chaewon-card')) return;
       const wrapper = document.createElement('div');
       wrapper.className = 'chaewon-card';
       const parent = h.parentNode;
-      // Collect siblings until next h1-h6
       const collected = [h];
       let next = h.nextElementSibling;
       while (next && !/^H[1-6]$/.test(next.tagName)) {
