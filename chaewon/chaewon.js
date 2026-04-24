@@ -65,7 +65,8 @@
   // ---------- Asset loading — cached for the session ----------
   let _manifestCache = null;
 
-  function parseManifest(data) {
+  function parseManifest(json) {
+    const data = typeof json === 'string' ? JSON.parse(json) : json;
     const out = { bubbles: [], gifs: [], mascots: [], stickers: [] };
     for (const cat of Object.keys(out)) {
       if (Array.isArray(data[cat])) {
@@ -85,8 +86,8 @@
       return _manifestCache;
     } catch (err) {
       console.warn('[chaewon] manifest load failed; using empty asset set:', err);
-      _manifestCache = { bubbles: [], gifs: [], mascots: [], stickers: [] };
-      return _manifestCache;
+      // Don't poison the cache — let next call retry.
+      return { bubbles: [], gifs: [], mascots: [], stickers: [] };
     }
   }
 

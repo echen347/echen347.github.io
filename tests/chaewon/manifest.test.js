@@ -62,4 +62,12 @@ test('pickRandom returns n elements when n < length', () => {
   assert.strictEqual(r.length, 2);
 });
 
+test('pickRandom returns [] for empty array', () => {
+  assert.deepStrictEqual(pickRandom([], 3), []);
+});
+
+test('pickRandom returns [] when n is 0', () => {
+  assert.deepStrictEqual(pickRandom([1, 2, 3], 0), []);
+});
+
 module.exports = { parseManifest, pickRandom };
