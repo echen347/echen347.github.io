@@ -271,3 +271,17 @@ body.chaewon-mode,
 body.chaewon-mode * {
   font-family: "Comic Sans MS", "Comic Neue", "Chalkboard SE", cursive !important;
 }
+
+body.chaewon-mode .chaewon-trail-heart {
+  position: fixed;
+  pointer-events: none;
+  z-index: 100;
+  font-size: 14px;
+  color: #ff66a3;
+  transform: translate(-50%, -50%);
+  animation: chaewon-trail-fade 0.7s ease-out forwards;
+}
+@keyframes chaewon-trail-fade {
+  0%   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -180%) scale(0.6); }
+}

@@ -320,12 +320,32 @@
     wrap.remove();
   }
 
+  // ---------- Cursor trail (Phase 5.1) ----------
+  let _cursorTrailLastTime = 0;
+  function spawnTrailHeart(x, y) {
+    const heart = document.createElement('span');
+    heart.className = 'chaewon-trail-heart';
+    heart.textContent = '♡';
+    heart.style.left = `${x}px`;
+    heart.style.top = `${y}px`;
+    document.body.appendChild(heart);
+    setTimeout(() => heart.remove(), 700);
+  }
+  function handleMouseMove(e) {
+    if (!state.active) return;
+    const now = performance.now();
+    if (now - _cursorTrailLastTime < 50) return;
+    _cursorTrailLastTime = now;
+    spawnTrailHeart(e.clientX, e.clientY);
+  }
+
   // ---------- Init ----------
   function init() {
     if (isStoredActive()) {
       activate({ skipCinematic: true });
     }
     document.addEventListener('keydown', handleKeydown);
+    document.addEventListener('mousemove', handleMouseMove);
   }
 
   if (document.readyState === 'loading') {
