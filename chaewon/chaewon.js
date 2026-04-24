@@ -28,6 +28,7 @@
     state.active = true;
     ensureExitButton();
     applyCardClassMarkers();
+    ensureMarquees();
     // Subsequent phases will hook in here: assets, marquee, bubbles, etc.
   }
 
@@ -38,6 +39,7 @@
     state.active = false;
     removeExitButton();
     removeCardClassMarkers();
+    removeMarquees();
     // Subsequent phases: cleanup listeners, restore SMC rendering, etc.
   }
 
@@ -46,6 +48,22 @@
   const BUFFER_MAX = 16;
   // Pre-sorted longest-first to avoid shadowing during match. Recomputed only at module load.
   const SORTED_TRIGGERS = [...TRIGGERS].sort((a, b) => b.length - a.length);
+
+  // Placeholder phrase rotation — see spec §10 for tone framing
+  const MARQUEE_PHRASES = [
+    'STAN CHAEWON',
+    'STREAM CRAZY',
+    'KIM CHAEWON IS PEAK PERFORMANCE',
+    'LE SSERAFIM FOREVER',
+    'CHAEWON WORLD DOMINATION',
+  ];
+
+  function buildMarqueeContent() {
+    // Each phrase separated by ♡♡♡; loop the whole sequence twice for seamless scroll
+    const sep = ' ♡♡♡ ';
+    const single = MARQUEE_PHRASES.map(p => p).join(sep) + sep;
+    return single + single; // duplicated for seamless infinite loop
+  }
 
   // ---------- Persistence helpers — mirror tests/chaewon/persistence.test.js ----------
   const SESSION_KEY = 'chaewonMode';
@@ -185,6 +203,25 @@
       while (card.firstChild) parent.insertBefore(card.firstChild, card);
       card.remove();
     });
+  }
+
+  function ensureMarquees() {
+    if (document.getElementById('chaewon-marquee-top')) return;
+    const positions = ['top', 'bottom', 'left', 'right'];
+    for (const pos of positions) {
+      const bar = document.createElement('div');
+      bar.id = `chaewon-marquee-${pos}`;
+      bar.className = `chaewon-marquee chaewon-marquee-${pos}`;
+      const inner = document.createElement('div');
+      inner.className = 'chaewon-marquee-inner';
+      inner.textContent = buildMarqueeContent();
+      bar.appendChild(inner);
+      document.body.appendChild(bar);
+    }
+  }
+
+  function removeMarquees() {
+    document.querySelectorAll('.chaewon-marquee').forEach(el => el.remove());
   }
 
   // ---------- Init ----------
