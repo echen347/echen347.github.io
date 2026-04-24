@@ -411,13 +411,28 @@
   }
   function attachHeadingTranslations() {
     document.querySelectorAll('h1, h2, h3, h4').forEach(h => {
-      const original = h.textContent;
+      // Find the first non-whitespace text node child. We swap ONLY that node
+      // so any child elements (e.g. the SMC re-open button inside index.html's
+      // h1 "Ethan Chen") survive the text swap intact.
+      let textNode = null;
+      for (const node of h.childNodes) {
+        if (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) {
+          textNode = node;
+          break;
+        }
+      }
+      if (!textNode) return;
+      const original = textNode.textContent;
       const translated = lookupTranslation(original);
       if (!translated) return;
       h.dataset.chaewonOriginal = original;
       h.dataset.chaewonTranslated = translated;
-      h.addEventListener('mouseenter', () => { if (state.active) h.textContent = translated; });
-      h.addEventListener('mouseleave', () => { if (state.active) h.textContent = original; });
+      h.addEventListener('mouseenter', () => {
+        if (state.active) textNode.textContent = translated;
+      });
+      h.addEventListener('mouseleave', () => {
+        if (state.active) textNode.textContent = original;
+      });
     });
   }
 
