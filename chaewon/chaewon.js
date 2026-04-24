@@ -28,6 +28,7 @@
     state.active = true;
     ensureExitButton();
     applyCardClassMarkers();
+    attachAllCardTilts();
     ensureMarquees();
     ensureBackground();
     decorateHeadshot();
@@ -360,6 +361,27 @@
     // Avoid bursting on exit button (already has its own feedback)
     if (e.target.closest('.chaewon-exit')) return;
     spawnClickBurst(e.clientX, e.clientY);
+  }
+
+  // ---------- Card tilt (Phase 5.3) ----------
+  function attachCardTilt(card) {
+    card.addEventListener('mousemove', e => {
+      if (!state.active) return;
+      const r = card.getBoundingClientRect();
+      const cx = r.left + r.width / 2;
+      const cy = r.top + r.height / 2;
+      const dx = (e.clientX - cx) / (r.width / 2);
+      const dy = (e.clientY - cy) / (r.height / 2);
+      const rotY = dx * 6;
+      const rotX = -dy * 6;
+      card.style.transform = `perspective(800px) rotateX(${rotX}deg) rotateY(${rotY}deg)`;
+    });
+    card.addEventListener('mouseleave', () => {
+      card.style.transform = '';
+    });
+  }
+  function attachAllCardTilts() {
+    document.querySelectorAll('.chaewon-card').forEach(attachCardTilt);
   }
 
   // ---------- Init ----------
