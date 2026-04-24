@@ -183,16 +183,34 @@
   // Mark major content blocks as cards. Idempotent: skips headings already
   // inside a chaewon-card, so calling this twice doesn't produce nested cards.
   function applyCardClassMarkers() {
-    document.querySelectorAll('main h2, main h3').forEach(h => {
-      // Skip if already wrapped (idempotency + safety against unexpected DOM shapes)
+    const main = document.querySelector('main');
+    if (!main) return;
+
+    // Pass 1: wrap any leading content (before the first h2/h3/h4) in a "lead" card.
+    // This handles index.html's bio-flex (no preceding heading) and similar intro paragraphs.
+    const firstHeading = main.querySelector('h2, h3, h4');
+    const leadChildren = [];
+    for (const child of Array.from(main.children)) {
+      if (child === firstHeading) break;
+      leadChildren.push(child);
+    }
+    if (leadChildren.length > 0 && !leadChildren[0].closest('.chaewon-card')) {
+      const leadWrap = document.createElement('div');
+      leadWrap.className = 'chaewon-card';
+      main.insertBefore(leadWrap, firstHeading || null);
+      for (const el of leadChildren) leadWrap.appendChild(el);
+    }
+
+    // Pass 2: wrap each heading-led block (h2/h3/h4) in a card.
+    document.querySelectorAll('main h2, main h3, main h4').forEach(h => {
       if (h.closest('.chaewon-card')) return;
       const wrapper = document.createElement('div');
       wrapper.className = 'chaewon-card';
       const parent = h.parentNode;
-      // Collect siblings until next h1/h2/h3
+      // Collect siblings until next h1-h6
       const collected = [h];
       let next = h.nextElementSibling;
-      while (next && !/^H[123]$/.test(next.tagName)) {
+      while (next && !/^H[1-6]$/.test(next.tagName)) {
         collected.push(next);
         next = next.nextElementSibling;
       }
