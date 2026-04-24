@@ -197,3 +197,35 @@ body.chaewon-mode footer {
   position: relative;
   z-index: 5;
 }
+
+body.chaewon-mode .chaewon-headshot-wrap {
+  position: relative;
+  display: inline-block;
+}
+
+body.chaewon-mode img.chaewon-headshot {
+  border-radius: 50%;
+  border: 4px solid white;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6);
+  animation: chaewon-breath 6s ease-in-out infinite;
+}
+
+@keyframes chaewon-breath {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.02); }
+}
+
+body.chaewon-mode .chaewon-headshot-sticker {
+  position: absolute;
+  top: 35%;
+  right: 12%;
+  font-size: 36px;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.4));
+  animation: chaewon-heart-pulse 1.2s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes chaewon-heart-pulse {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.15); }
+}

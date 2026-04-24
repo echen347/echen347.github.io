@@ -30,6 +30,7 @@
     applyCardClassMarkers();
     ensureMarquees();
     ensureBackground();
+    decorateHeadshot();
     // Subsequent phases will hook in here: assets, marquee, bubbles, etc.
   }
 
@@ -42,6 +43,7 @@
     removeCardClassMarkers();
     removeMarquees();
     removeBackground();
+    undecorateHeadshot();
     // Subsequent phases: cleanup listeners, restore SMC rendering, etc.
   }
 
@@ -239,7 +241,7 @@
       rowEl.className = 'chaewon-bg-row';
       [...text].forEach((ch, i) => {
         const span = document.createElement('span');
-        span.textContent = ch === ' ' ? ' ' : ch;
+        span.textContent = ch;
         span.style.animationDelay = `${(row * text.length + i) * 0.12}s`;
         rowEl.appendChild(span);
       });
@@ -252,6 +254,35 @@
   function removeBackground() {
     const bg = document.getElementById('chaewon-bg');
     if (bg) bg.remove();
+  }
+
+  function decorateHeadshot() {
+    const img = document.querySelector('img[src*="headshot"]');
+    if (!img) return;
+    img.classList.add('chaewon-headshot');
+    // Wrap the img if not already wrapped, so we can position the sticker
+    if (!img.parentNode.classList.contains('chaewon-headshot-wrap')) {
+      const wrap = document.createElement('span');
+      wrap.className = 'chaewon-headshot-wrap';
+      img.parentNode.insertBefore(wrap, img);
+      wrap.appendChild(img);
+      const sticker = document.createElement('span');
+      sticker.className = 'chaewon-headshot-sticker';
+      sticker.textContent = '❤';
+      sticker.setAttribute('aria-hidden', 'true');
+      wrap.appendChild(sticker);
+    }
+  }
+
+  function undecorateHeadshot() {
+    const wrap = document.querySelector('.chaewon-headshot-wrap');
+    if (!wrap) return;
+    const img = wrap.querySelector('img');
+    if (img) {
+      img.classList.remove('chaewon-headshot');
+      wrap.parentNode.insertBefore(img, wrap);
+    }
+    wrap.remove();
   }
 
   // ---------- Init ----------
