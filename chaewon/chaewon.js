@@ -209,30 +209,35 @@
   }
 
   function spawnLasers() {
-    // Two projector positions (top-left and top-right), each emitting 4 fan-spread beams
+    // Wrap all beams in a single stage div with `isolation: isolate` so the
+    // mix-blend-mode: screen on each beam blends only with sibling beams,
+    // not with the page content underneath (which was causing the wallpaper
+    // letters to modulate beam brightness and look like horizontal stripes).
+    const stage = document.createElement('div');
+    stage.className = 'chaewon-laser-stage';
+
     const projectors = [
-      { x: '15vw', baseAngle: 25 },   // top-left — beams aimed down-right
-      { x: '85vw', baseAngle: -25 },  // top-right — beams aimed down-left
+      { x: '15vw', baseAngle: 25 },
+      { x: '85vw', baseAngle: -25 },
     ];
     const beamsPerProjector = 4;
-    const fanSpread = 14; // degrees between adjacent beams within a projector
+    const fanSpread = 14;
 
-    projectors.forEach((proj, projIdx) => {
+    projectors.forEach((proj) => {
       for (let b = 0; b < beamsPerProjector; b++) {
         const beam = document.createElement('div');
         beam.className = 'chaewon-laser-beam';
         beam.style.left = proj.x;
-        // Each beam in a projector has a slight angular offset (fan spread)
         const fanOffset = (b - (beamsPerProjector - 1) / 2) * fanSpread;
         beam.style.setProperty('--base-angle', `${proj.baseAngle + fanOffset}deg`);
         beam.style.setProperty('--sweep-amount', '22deg');
-        // Phase offset between beams creates a wave-like sweep within the projector
-        const beamDelay = b * 0.08;
-        beam.style.animationDelay = `${beamDelay}s`;
-        document.body.appendChild(beam);
-        setTimeout(() => beam.remove(), 3200);
+        beam.style.animationDelay = `${b * 0.08}s`;
+        stage.appendChild(beam);
       }
     });
+
+    document.body.appendChild(stage);
+    setTimeout(() => stage.remove(), 3200);
   }
 
   // ---------- Exit button ----------

@@ -388,13 +388,21 @@ body.chaewon-mode.chaewon-egg-crazy::after {
    each emitting multiple cone-shaped beams that sweep back and forth in a fan
    motion. Beams are JS-spawned (.chaewon-laser-beam) so each can have its own
    angle, delay, and sweep range. */
-.chaewon-laser-beam {
+.chaewon-laser-stage {
   position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1000;
+  isolation: isolate;     /* establishes a stacking context — mix-blend-mode below
+                             stays scoped to siblings within this stage */
+  overflow: hidden;
+}
+
+.chaewon-laser-beam {
+  position: absolute;
   top: 0;
   width: 30vw;
   height: 130vh;
-  pointer-events: none;
-  z-index: 1000;
   /* Cone shape — narrow at top (the projector point), wide at bottom (the floor) */
   clip-path: polygon(48% 0, 52% 0, 100% 100%, 0 100%);
   background: linear-gradient(
@@ -409,7 +417,7 @@ body.chaewon-mode.chaewon-egg-crazy::after {
   transform: translateX(-50%) rotate(var(--base-angle));
   opacity: 0;
   animation: chaewon-laser-fan 2.6s ease-in-out 1 forwards;
-  mix-blend-mode: screen;
+  mix-blend-mode: screen;  /* now blends only with sibling beams in the stage */
 }
 
 @keyframes chaewon-laser-fan {
