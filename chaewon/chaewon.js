@@ -262,8 +262,8 @@
     bg.className = 'chaewon-bg';
     bg.setAttribute('aria-hidden', 'true');
     const text = 'I LOVE CHAEWON';
-    // 4 stacked rows for visual fill
-    for (let row = 0; row < 4; row++) {
+    // 7 stacked rows for visual fill
+    for (let row = 0; row < 7; row++) {
       const rowEl = document.createElement('div');
       rowEl.className = 'chaewon-bg-row';
       [...text].forEach((ch, i) => {

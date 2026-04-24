@@ -162,7 +162,7 @@ body.chaewon-mode .chaewon-bg {
   overflow: hidden;
   opacity: 0.18;
   user-select: none;
-  transform: rotate(-10deg) scale(1.4);
+  transform: rotate(-10deg) scale(1.8);
   transform-origin: center;
 }
 
