@@ -1,0 +1,7 @@
+{
+  "$schema_comment": "categories: bubbles (circular-friendly photos), gifs (animated), mascots (cartoon avatars), stickers (decorative). Add new files to the appropriate folder and append an entry here. The loader picks them up on next activation.",
+  "bubbles": [],
+  "gifs": [],
+  "mascots": [],
+  "stickers": []
+}
