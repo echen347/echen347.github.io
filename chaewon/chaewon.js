@@ -27,6 +27,7 @@
     setStoredActive();
     state.active = true;
     ensureExitButton();
+    applyCardClassMarkers();
     // Subsequent phases will hook in here: assets, marquee, bubbles, etc.
   }
 
@@ -36,6 +37,7 @@
     clearStoredActive();
     state.active = false;
     removeExitButton();
+    removeCardClassMarkers();
     // Subsequent phases: cleanup listeners, restore SMC rendering, etc.
   }
 
@@ -153,6 +155,41 @@
     if (!exitBtn) return;
     exitBtn.remove();
     exitBtn = null;
+  }
+
+  // ---------- Card markers ----------
+  // Mark major content blocks as cards. Heuristic: direct children of <main>,
+  // plus key article-like containers. Idempotent.
+  function applyCardClassMarkers() {
+    const candidates = document.querySelectorAll(
+      'main > p, main > div, main > section, main > article, main > ul, main > h2, main > h3'
+    );
+    // Group consecutive sibling content under a synthetic card wrapper.
+    // Simpler approach for v1: just tag heading-led blocks directly.
+    document.querySelectorAll('main h2, main h3').forEach(h => {
+      // Wrap from this heading up to (but not including) the next sibling heading
+      let wrapper = document.createElement('div');
+      wrapper.className = 'chaewon-card';
+      const parent = h.parentNode;
+      const startIdx = Array.from(parent.children).indexOf(h);
+      // Collect siblings until next h2/h3 of same or higher level
+      const collected = [h];
+      let next = h.nextElementSibling;
+      while (next && !/^H[123]$/.test(next.tagName)) {
+        collected.push(next);
+        next = next.nextElementSibling;
+      }
+      parent.insertBefore(wrapper, h);
+      for (const el of collected) wrapper.appendChild(el);
+    });
+  }
+
+  function removeCardClassMarkers() {
+    document.querySelectorAll('.chaewon-card').forEach(card => {
+      const parent = card.parentNode;
+      while (card.firstChild) parent.insertBefore(card.firstChild, card);
+      card.remove();
+    });
   }
 
   // ---------- Init ----------

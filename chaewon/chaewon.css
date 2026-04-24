@@ -41,3 +41,19 @@ body.chaewon-mode hr {
   background: rgba(40, 40, 40, 0.95);
   transform: scale(1.05);
 }
+
+body.chaewon-mode .chaewon-card {
+  background: #0a0a0a;
+  border: 1px solid #1c1c1c;
+  border-radius: 14px;
+  padding: 18px 22px;
+  margin: 16px 0;
+  font-family: 'Latin Modern Roman', 'Computer Modern', Georgia, serif;
+}
+
+body.chaewon-mode .chaewon-card h2,
+body.chaewon-mode .chaewon-card h3 {
+  color: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  font-weight: 700;
+}
