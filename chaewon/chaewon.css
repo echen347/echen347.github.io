@@ -263,3 +263,11 @@ body.chaewon-mode .chaewon-card > *:first-child {
 body.chaewon-mode .chaewon-card > *:last-child {
   margin-bottom: 0;
 }
+
+/* Sillier vibes — comic-sans-core across the whole chaewon-mode tree.
+   Override every prior font-family declaration in this file AND any external
+   styles (LaTeX.css's serif baseline). */
+body.chaewon-mode,
+body.chaewon-mode * {
+  font-family: "Comic Sans MS", "Comic Neue", "Chalkboard SE", cursive !important;
+}
