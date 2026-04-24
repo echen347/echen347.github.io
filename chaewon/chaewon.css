@@ -149,3 +149,51 @@ body.chaewon-mode .chaewon-marquee-right .chaewon-marquee-inner {
   from { transform: translateY(-50%); }
   to   { transform: translateY(0); }
 }
+
+body.chaewon-mode .chaewon-bg {
+  position: fixed;
+  top: 30px; left: 30px; right: 30px; bottom: 30px;
+  z-index: 0;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+  opacity: 0.18;
+  user-select: none;
+  transform: rotate(-10deg) scale(1.4);
+  transform-origin: center;
+}
+
+body.chaewon-mode .chaewon-bg-row {
+  white-space: nowrap;
+  font-size: 110px;
+  font-weight: 900;
+  letter-spacing: 12px;
+  font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  line-height: 1.1;
+}
+
+body.chaewon-mode .chaewon-bg-row span {
+  display: inline-block;
+  animation: chaewon-letter-flash 3s linear infinite;
+}
+
+@keyframes chaewon-letter-flash {
+  0%   { color: #ff0066; }
+  20%  { color: #00ffe5; }
+  40%  { color: #ffee00; }
+  60%  { color: #b300ff; }
+  80%  { color: #ff6a00; }
+  100% { color: #ff0066; }
+}
+
+/* Ensure cards + content sit above the background */
+body.chaewon-mode .chaewon-card,
+body.chaewon-mode main,
+body.chaewon-mode header,
+body.chaewon-mode footer {
+  position: relative;
+  z-index: 5;
+}

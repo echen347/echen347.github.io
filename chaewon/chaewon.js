@@ -29,6 +29,7 @@
     ensureExitButton();
     applyCardClassMarkers();
     ensureMarquees();
+    ensureBackground();
     // Subsequent phases will hook in here: assets, marquee, bubbles, etc.
   }
 
@@ -40,6 +41,7 @@
     removeExitButton();
     removeCardClassMarkers();
     removeMarquees();
+    removeBackground();
     // Subsequent phases: cleanup listeners, restore SMC rendering, etc.
   }
 
@@ -222,6 +224,34 @@
 
   function removeMarquees() {
     document.querySelectorAll('.chaewon-marquee').forEach(el => el.remove());
+  }
+
+  function ensureBackground() {
+    if (document.getElementById('chaewon-bg')) return;
+    const bg = document.createElement('div');
+    bg.id = 'chaewon-bg';
+    bg.className = 'chaewon-bg';
+    bg.setAttribute('aria-hidden', 'true');
+    const text = 'I LOVE CHAEWON';
+    // 4 stacked rows for visual fill
+    for (let row = 0; row < 4; row++) {
+      const rowEl = document.createElement('div');
+      rowEl.className = 'chaewon-bg-row';
+      [...text].forEach((ch, i) => {
+        const span = document.createElement('span');
+        span.textContent = ch === ' ' ? ' ' : ch;
+        span.style.animationDelay = `${(row * text.length + i) * 0.12}s`;
+        rowEl.appendChild(span);
+      });
+      bg.appendChild(rowEl);
+    }
+    // Insert as first child of body so it's behind everything
+    document.body.insertBefore(bg, document.body.firstChild);
+  }
+
+  function removeBackground() {
+    const bg = document.getElementById('chaewon-bg');
+    if (bg) bg.remove();
   }
 
   // ---------- Init ----------
