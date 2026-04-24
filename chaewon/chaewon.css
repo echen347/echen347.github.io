@@ -3,7 +3,20 @@
    when the mode is off. See docs/superpowers/specs/2026-04-22-chaewon-mode-design.md */
 
 body.chaewon-mode {
-  /* Phase 3 will add the rest */
+  background: #000 !important;
+  color: #e8e8e8 !important;
+  /* The marquee bars + background text + bubbles will overlay; content gets cards via Task 3.2 */
+}
+
+body.chaewon-mode a { color: #ff89b8; }
+body.chaewon-mode a:hover { color: #ffb3d1; }
+body.chaewon-mode header,
+body.chaewon-mode nav,
+body.chaewon-mode footer {
+  background: transparent !important;
+}
+body.chaewon-mode hr {
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
 .chaewon-exit {
