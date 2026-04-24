@@ -51,7 +51,7 @@
   }
 
   // ---------- Keyboard buffer trigger ----------
-  const TRIGGERS = ['chaewon']; // sub-eggs added in Phase 5
+  const TRIGGERS = ['chaewon', 'crazy', 'fearless', 'antifragile', 'easy', 'perfectnight'];
   const BUFFER_MAX = 16;
   // Pre-sorted longest-first to avoid shadowing during match. Recomputed only at module load.
   const SORTED_TRIGGERS = [...TRIGGERS].sort((a, b) => b.length - a.length);
@@ -160,9 +160,10 @@
   }
 
   function handleSubEgg(name) {
-    // Stub — Phase 5 (Task 5.6) implements the visual flourishes per sub-egg.
-    // The warn helps debugging if a sub-egg trigger is added prematurely.
-    console.warn('[ChaewonMode] sub-egg matched but handler not yet implemented:', name);
+    if (!state.active) return; // sub-eggs only fire while in Chaewon mode
+    const cls = `chaewon-egg-${name}`;
+    document.body.classList.add(cls);
+    setTimeout(() => document.body.classList.remove(cls), 3000);
   }
 
   // ---------- Exit button ----------
