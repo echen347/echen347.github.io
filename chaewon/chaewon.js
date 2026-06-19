@@ -22,7 +22,6 @@
   function activate(opts = {}) {
     if (state.active) return;
     const { skipCinematic = false } = opts;
-    void skipCinematic; // consumed by cinematic logic wired in Task 7.1
     document.body.classList.add('chaewon-mode');
     setStoredActive();
     state.active = true;
@@ -35,6 +34,9 @@
     decorateHeadshot();
     preloadPhotos();      // warm the image cache for the SMC reskin + bubbles
     ensureBubbles();      // floating Chaewon photo bubbles on the bio page
+    // First manual activation per browser plays the reveal cinematic.
+    if (!skipCinematic && !hasFirstSeen()) playCinematic();
+    markFirstSeen();
   }
 
   function deactivate() {
@@ -48,6 +50,7 @@
     removeBackground();
     undecorateHeadshot();
     removeBubbles();
+    endCinematic();
     if (_idleTimer) { clearTimeout(_idleTimer); _idleTimer = null; }
     // Subsequent phases: cleanup listeners, restore SMC rendering, etc.
   }
@@ -292,6 +295,60 @@
     if (_bubbleLayer) { _bubbleLayer.remove(); _bubbleLayer = null; }
     _bubbles = [];
     _bubbleRetryCount = 0;
+  }
+
+  // ---------- First-activation cinematic (§9) ----------
+  // Plays once per browser (gated by localStorage). A black radial fade reveals
+  // the reskinned page while a heart burst flies from center and a giant
+  // "I ♥ CHAEWON" flashes once. Skipped under reduced motion; interruptible
+  // (deactivate calls endCinematic). All elements/timers are tracked for cleanup.
+  let _cineEls = [];
+  let _cineTimer = null;
+
+  function playCinematic() {
+    if (_reduceMotion) return;
+    endCinematic(); // guard against overlap
+
+    const fade = document.createElement('div');
+    fade.className = 'chaewon-cine-fade';
+    fade.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(fade);
+    _cineEls.push(fade);
+
+    const cx = window.innerWidth / 2;
+    const cy = window.innerHeight / 2;
+    const n = 22;
+    for (let i = 0; i < n; i++) {
+      const heart = document.createElement('span');
+      heart.className = 'chaewon-cine-burst';
+      heart.textContent = '♥';
+      const ang = (Math.PI * 2 * i) / n + (Math.random() - 0.5) * 0.4;
+      const dist = 160 + Math.random() * 280;
+      heart.style.left = `${cx}px`;
+      heart.style.top = `${cy}px`;
+      heart.style.fontSize = `${20 + Math.random() * 26}px`;
+      heart.style.setProperty('--dx', `${Math.cos(ang) * dist}px`);
+      heart.style.setProperty('--dy', `${Math.sin(ang) * dist}px`);
+      heart.style.setProperty('--r', `${(Math.random() - 0.5) * 140}deg`);
+      heart.style.animationDelay = `${0.45 + Math.random() * 0.25}s`;
+      document.body.appendChild(heart);
+      _cineEls.push(heart);
+    }
+
+    const flash = document.createElement('div');
+    flash.className = 'chaewon-cine-flash';
+    flash.textContent = 'I ♥ CHAEWON';
+    flash.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(flash);
+    _cineEls.push(flash);
+
+    _cineTimer = setTimeout(endCinematic, 2400);
+  }
+
+  function endCinematic() {
+    if (_cineTimer) { clearTimeout(_cineTimer); _cineTimer = null; }
+    _cineEls.forEach(el => el.remove());
+    _cineEls = [];
   }
 
   function handleKeydown(e) {
