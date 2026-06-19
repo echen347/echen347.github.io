@@ -791,19 +791,19 @@
   // Ethan. Placeholders in his voice; edit freely.
   // Keyed by course code exactly as it appears before the ":" in academic.html.
   const COURSE_COMMENTS = {
-    'MATH 8803 RIE': "optimal transport, but the only mass i need moved is chaewon higher up my recommended page ♡",
-    'MATH 6221': "computing expectations between EASY CRAZY HOT replays ♡",
-    'MATH 7339': "epsilon–delta proofs go down smoother with PERFECT NIGHT on loop ♡",
-    'MATH 6579': "survived measure theory psets purely on ANTIFRAGILE energy ♡",
-    'MATH 6121': "group theory, but the only group i study religiously is LE SSERAFIM ♡",
-    'ECE 6756': "online learning so i can predict chaewon's next hair color in real time ♡",
-    'ECE 6254': "learned statistical ML mostly to analyze chaewon fancams more rigorously ♡",
-    'CS 4650': "NLP so i can finally parse what FEARNOT is screaming in the comments ♡",
-    'CSE 8803 IUQ': "quantifying uncertainty in everything except my devotion to kkura ♡",
-    'CS 8803 DTA': "optimization, sampling, and games — still my best sample is her discography ♡",
-    'ECE 8803 GDL': "generative models, none of which generate enough chaewon content ♡",
+    'MATH 8803 RIE': "girl HELP i opened her fancam mid-lecture 😭",
+    'MATH 6221': "wasn't listening she was trending",
+    'MATH 7339': "my notes literally just say 'kkura' 💀",
+    'MATH 6579': "ran on ANTIFRAGILE and delulu all semester",
+    'MATH 6121': "studying the wrong group ✋ it's le sserafim",
+    'ECE 6756': "should be doing the pset. rewatching her lives instead",
+    'ECE 6254': "i'm SO normal about her fancams btw 😭",
+    'CS 4650': "zoned out so hard i missed the whole lecture, kkura's fault",
+    'CSE 8803 IUQ': "0% uncertainty she's that girl",
+    'CS 8803 DTA': "she's already optimal idk what to tell u",
+    'ECE 8803 GDL': "no ai out here generating enough kkura content fr 😭",
   };
-  const WRITING_INTRO = "this is where ethan writes when he isn't busy stanning chaewon ♡ best read with PERFECT NIGHT on repeat ♡";
+  const WRITING_INTRO = "he writes here between fancam edits ✋ delulu but literate 😭";
 
   function lookupTranslation(text) {
     if (!text) return null;
