@@ -19,6 +19,24 @@ body.chaewon-mode hr {
   border-color: rgba(255, 255, 255, 0.1);
 }
 
+/* Mobile treasure-hunt hearts. Rendered on the NORMAL site (touch devices only),
+   so this is deliberately NOT scoped under body.chaewon-mode. Kept subtle. */
+.chaewon-easter-heart {
+  cursor: pointer;
+  color: #ff6aa3;
+  margin-left: 3px;
+  font-size: 0.9em;
+  -webkit-tap-highlight-color: transparent;
+  animation: chaewon-easter-heart-pulse 1.8s ease-in-out infinite;
+}
+@keyframes chaewon-easter-heart-pulse {
+  0%, 100% { opacity: 0.45; }
+  50%      { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chaewon-easter-heart { animation: none; opacity: 0.7; }
+}
+
 .chaewon-exit {
   position: fixed;
   top: 38px;

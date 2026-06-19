@@ -25,6 +25,7 @@
     document.body.classList.add('chaewon-mode');
     setStoredActive();
     state.active = true;
+    removeHuntHearts();   // hunt is done once the mode is on
     ensureExitButton();
     applyCardClassMarkers();
     attachAllCardTilts();
@@ -865,6 +866,65 @@
     resetIdleTimer();
   }
 
+  // ---------- Mobile 5-heart treasure hunt (§4.2) ----------
+  // Touch-only activation path: five subtle hearts revealed one at a time; tapping
+  // the 5th turns on Chaewon Mode. Desktop (pointer: fine) never sees them.
+  // Progress persists in sessionStorage so the hunt survives page navigation.
+  const HUNT_TOTAL = 5;
+  const _isTouch = !!(window.matchMedia &&
+    window.matchMedia('(hover: none) and (pointer: coarse)').matches);
+  let _huntEls = [];
+
+  function huntAnchors() {
+    const main = document.querySelector('main');
+    if (!main) return [];
+    const blocks = [...main.querySelectorAll('p, h2, h3, li')];
+    if (!blocks.length) return [];
+    const at = f => blocks[Math.min(blocks.length - 1, Math.floor(blocks.length * f))];
+    return [at(0.05), at(0.25), at(0.45), at(0.7), at(0.92)];
+  }
+
+  function initHunt(force) {
+    if ((!_isTouch && !force) || state.active) return;
+    showHuntHeart();
+  }
+
+  function showHuntHeart() {
+    removeHuntHearts();
+    const progress = getHuntProgress();
+    if (progress >= HUNT_TOTAL) return;
+    const anchor = huntAnchors()[progress];
+    if (!anchor) return; // no suitable spot on this page
+    const heart = document.createElement('span');
+    heart.className = 'chaewon-easter-heart';
+    heart.textContent = '♡';
+    heart.setAttribute('role', 'button');
+    heart.setAttribute('tabindex', '0');
+    heart.setAttribute('aria-label', 'hidden heart');
+    heart.addEventListener('click', onHuntTap);
+    anchor.appendChild(heart);
+    _huntEls.push(heart);
+  }
+
+  function onHuntTap(e) {
+    e.stopPropagation();
+    const next = getHuntProgress() + 1;
+    setHuntProgress(next);
+    removeHuntHearts();
+    if (next >= HUNT_TOTAL) {
+      activate();          // 5th heart -> Chaewon Mode (cinematic on first-ever)
+    } else {
+      showHuntHeart();
+    }
+  }
+
+  function removeHuntHearts() {
+    _huntEls.forEach(h => h.remove());
+    _huntEls = [];
+  }
+
+  window.ChaewonMode._initHunt = initHunt; // exposed for tests
+
   // ---------- Init ----------
   function init() {
     if (isStoredActive()) {
@@ -878,6 +938,7 @@
     document.addEventListener('scroll', handleAnyActivity);
     document.addEventListener('touchstart', handleAnyActivity);
     attachHeadingTranslations();
+    initHunt();   // touch-only; no-op on desktop or once active
   }
 
   if (document.readyState === 'loading') {
