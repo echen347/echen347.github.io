@@ -475,6 +475,27 @@
 
     // --- SMC Simulation Classes ---
 
+    // Chaewon Mode reskin: particles render as cached heart sprites (far cheaper
+    // than per-particle ctx.fillText at ~1000 particles), targets as circular
+    // Chaewon photos. The math (Langevin drift, weights, resampling) is untouched
+    // — only draw() branches on body.chaewon-mode.
+    let _cwHeartPink = null;
+    let _cwHeartRed = null;
+    function makeHeartSprite(color) {
+      const s = document.createElement('canvas');
+      s.width = s.height = 32;
+      const c = s.getContext('2d');
+      c.fillStyle = color;
+      c.font = '26px sans-serif';
+      c.textAlign = 'center';
+      c.textBaseline = 'middle';
+      c.fillText('♥', 16, 18);
+      return s;
+    }
+    function cwActive() {
+      return document.body.classList.contains('chaewon-mode');
+    }
+
     class Target {
       constructor(x, y) {
         this.x = x || Math.random() * canvas.width;
@@ -520,7 +541,40 @@
         this.phase += 0.05;
       }
 
-      draw() {
+      draw(cw) {
+        if (cw) {
+          // Lazily claim a Chaewon photo; retry each frame until one decodes.
+          if (!this._cwPhoto) {
+            this._cwPhoto = (window.ChaewonMode && window.ChaewonMode.randomPhoto)
+              ? window.ChaewonMode.randomPhoto() : null;
+          }
+          const pr = Math.max(26, Math.min(70, this.radius * 0.55)) *
+            (Math.sin(this.phase) * 0.05 + 1);
+          const img = this._cwPhoto;
+          if (img && img.complete && img.naturalWidth) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, pr, 0, Math.PI * 2);
+            ctx.closePath();
+            ctx.clip();
+            ctx.drawImage(img, this.x - pr, this.y - pr, pr * 2, pr * 2);
+            ctx.restore();
+            ctx.lineWidth = 2.5;
+            ctx.strokeStyle = 'rgba(255, 138, 184, 0.85)';
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, pr, 0, Math.PI * 2);
+            ctx.stroke();
+          } else {
+            const g = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, pr);
+            g.addColorStop(0, 'rgba(255, 120, 170, 0.30)');
+            g.addColorStop(1, 'rgba(255, 120, 170, 0)');
+            ctx.fillStyle = g;
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, pr, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          return;
+        }
         const pulse = Math.sin(this.phase) * 0.2 + 0.8;
         const gradient = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.radius * pulse);
         gradient.addColorStop(0, 'rgba(64, 224, 208, 0.15)');
@@ -623,8 +677,19 @@
         }
       }
 
-      draw() {
+      draw(cw) {
         if (this.opacity <= 0) return;
+
+        if (cw) {
+          const spr = this.state === 'DYING'
+            ? (_cwHeartRed || (_cwHeartRed = makeHeartSprite('#ff4d6d')))
+            : (_cwHeartPink || (_cwHeartPink = makeHeartSprite('#ff7ab0')));
+          const size = 13 * this.scale * (0.7 + this.weight * 0.9);
+          ctx.globalAlpha = Math.min(1, (0.4 + this.weight * 0.6) * this.opacity);
+          ctx.drawImage(spr, this.x - size / 2, this.y - size / 2, size, size);
+          ctx.globalAlpha = 1;
+          return;
+        }
 
         if (this.state === 'DYING') {
           // Red death
@@ -821,13 +886,16 @@
       ctx.fillStyle = gradient;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+      // Hoist the chaewon-mode flag once per frame — the class can't change
+      // mid-frame, so checking it per-particle (~1000×) was wasted DOM lookups.
+      const cw = cwActive();
       targets.forEach(t => {
         t.update();
-        t.draw();
+        t.draw(cw);
       });
 
       particles.forEach(p => {
-        p.draw();
+        p.draw(cw);
       });
 
       animationId = requestAnimationFrame(animate);

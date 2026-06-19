@@ -1,10 +1,52 @@
 {
   "$schema_comment": "categories: bubbles (circular-friendly photos), gifs (animated), mascots (cartoon avatars), stickers (decorative). Add new files to the appropriate folder and append an entry here. The loader picks them up on next activation.",
-  "bubbles": [],
+  "bubbles": [
+    {
+      "file": "bubbles/chaewon-00.jpg",
+      "alt": "Kim Chaewon throwing a finger heart, blonde era"
+    },
+    {
+      "file": "bubbles/chaewon-01.jpg",
+      "alt": "Kim Chaewon, Marie Claire Korea editorial"
+    },
+    {
+      "file": "bubbles/chaewon-02.jpg",
+      "alt": "Kim Chaewon close-up, LE SSERAFIM"
+    },
+    {
+      "file": "bubbles/chaewon-03.jpg",
+      "alt": "Kim Chaewon smiling close-up"
+    },
+    {
+      "file": "bubbles/chaewon-04.jpg",
+      "alt": "Kim Chaewon waving in a white beret"
+    },
+    {
+      "file": "bubbles/chaewon-05.jpg",
+      "alt": "Kim Chaewon flashing a peace sign at the airport"
+    },
+    {
+      "file": "bubbles/chaewon-06.jpg",
+      "alt": "Kim Chaewon waving, Produce 48 era"
+    },
+    {
+      "file": "bubbles/chaewon-07.jpg",
+      "alt": "Kim Chaewon at the airport"
+    }
+  ],
   "gifs": [
-    { "file": "gifs/heart-wave.gif", "alt": "Chaewon heart wave" },
-    { "file": "gifs/side-eye.gif", "alt": "Chaewon side eye" },
-    { "file": "gifs/dance.gif", "alt": "Chaewon dance" }
+    {
+      "file": "gifs/heart-wave.gif",
+      "alt": "Chaewon heart wave"
+    },
+    {
+      "file": "gifs/side-eye.gif",
+      "alt": "Chaewon side eye"
+    },
+    {
+      "file": "gifs/dance.gif",
+      "alt": "Chaewon dance"
+    }
   ],
   "mascots": [],
   "stickers": []

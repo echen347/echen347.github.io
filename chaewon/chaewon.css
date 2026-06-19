@@ -160,7 +160,7 @@ body.chaewon-mode .chaewon-bg {
   justify-content: center;
   align-items: center;
   overflow: hidden;
-  opacity: 0.18;
+  opacity: 0.42;
   user-select: none;
   transform: rotate(-10deg) scale(1.1);
   transform-origin: center;
@@ -309,6 +309,55 @@ body.chaewon-mode .chaewon-card:hover {
   box-shadow: 0 12px 32px rgba(255, 100, 140, 0.18);
 }
 
+/* Floating Chaewon bubbles. The wrapper carries the JS drift transform; the
+   inner .chaewon-bubble owns the circle + hover zoom so the two transforms
+   compose (parent translates, child scales) without fighting each other. */
+#chaewon-bubbles {
+  position: fixed;
+  inset: 30px;            /* sit inside the marquee bars */
+  z-index: 7;             /* above cards (5), below marquees (50) */
+  pointer-events: none;   /* gaps between bubbles stay click-through */
+  overflow: hidden;
+}
+body.chaewon-mode .chaewon-bubble-wrap {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  will-change: transform;
+}
+body.chaewon-mode .chaewon-bubble {
+  border-radius: 50%;
+  overflow: hidden;
+  pointer-events: auto;   /* only the circle is interactive */
+  cursor: pointer;
+  opacity: 0.9;
+  border: 2px solid rgba(255, 138, 184, 0.9);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45), 0 0 14px rgba(255, 120, 170, 0.35);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+}
+body.chaewon-mode .chaewon-bubble img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  pointer-events: none;
+}
+body.chaewon-mode .chaewon-bubble:hover {
+  transform: scale(1.7);
+  opacity: 1;
+  z-index: 20;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.6), 0 0 26px rgba(255, 120, 170, 0.65);
+}
+body.chaewon-mode .chaewon-bubble.chaewon-bubble-popping {
+  animation: chaewon-bubble-pop 0.34s ease-in forwards;
+}
+@keyframes chaewon-bubble-pop {
+  0%   { opacity: 0.9; }
+  60%  { opacity: 0.9; transform: scale(1.25); }
+  100% { opacity: 0; transform: scale(0.2); }
+}
+
 body.chaewon-mode .chaewon-idle-popup {
   position: fixed;
   bottom: 60px;
@@ -350,21 +399,64 @@ body.chaewon-mode .chaewon-idle-popup.chaewon-idle-leaving {
   to   { opacity: 0; transform: translateX(120%); }
 }
 
-/* CRAZY: red overlay flashes. Uses ::after so it doesn't fight the
-   body background !important from the dark theme. */
+/* CRAZY: a red/black beat-drop strobe with a hot radial center and a quick punch
+   on the content, instead of a flat-red blink. ::before = black flash, ::after =
+   red bloom, strobed on offset schedules so the screen flickers red→black→red.
+   steps(1) gives hard cuts (true strobe) rather than smooth fades. */
+body.chaewon-mode.chaewon-egg-crazy::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 499;
+  background: #000;
+  opacity: 0;
+  animation: chaewon-egg-crazy-black 1.3s steps(1, end) 1 forwards;
+}
 body.chaewon-mode.chaewon-egg-crazy::after {
   content: '';
   position: fixed;
   inset: 0;
   pointer-events: none;
   z-index: 500;
-  background: #ff0033;
-  animation: chaewon-egg-crazy-flash 1.2s ease-out 1 forwards;
+  background: radial-gradient(circle at 50% 45%, #ff1a4d 0%, #cc0033 45%, #2a0008 100%);
+  opacity: 0;
+  animation: chaewon-egg-crazy-red 1.3s steps(1, end) 1 forwards;
 }
-@keyframes chaewon-egg-crazy-flash {
+@keyframes chaewon-egg-crazy-red {
+  0%   { opacity: 0; }
+  6%   { opacity: 0.9; }
+  12%  { opacity: 0; }
+  20%  { opacity: 0.85; }
+  26%  { opacity: 0; }
+  38%  { opacity: 0.95; }
+  46%  { opacity: 0.1; }
+  56%  { opacity: 0.8; }
+  64%  { opacity: 0; }
+  78%  { opacity: 0.55; }
+  100% { opacity: 0; }
+}
+@keyframes chaewon-egg-crazy-black {
   0%, 100% { opacity: 0; }
-  10%, 30%, 50% { opacity: 0.75; }
-  20%, 40%, 60% { opacity: 0; }
+  14% { opacity: 0.9; }
+  19% { opacity: 0; }
+  31% { opacity: 0.85; }
+  37% { opacity: 0; }
+  49% { opacity: 0.7; }
+  55% { opacity: 0; }
+}
+/* Quick impact shake on the content (main only — fixed marquees/lasers untouched). */
+body.chaewon-mode.chaewon-egg-crazy main {
+  animation: chaewon-egg-crazy-shake 0.6s ease-in-out 1;
+}
+@keyframes chaewon-egg-crazy-shake {
+  0%, 100% { transform: translate(0, 0); }
+  10% { transform: translate(-5px, 2px) scale(1.01); }
+  22% { transform: translate(4px, -3px); }
+  34% { transform: translate(-4px, 3px); }
+  46% { transform: translate(3px, 2px) scale(1.012); }
+  60% { transform: translate(-2px, -2px); }
+  76% { transform: translate(2px, 1px); }
 }
 
 /* FEARLESS: petals now spawned by JS; each .chaewon-petal drifts with its own
@@ -420,31 +512,63 @@ body.chaewon-mode.chaewon-egg-crazy::after {
 .chaewon-laser-beam {
   position: absolute;
   top: 0;
-  width: 30vw;
-  height: 130vh;
-  /* Cone shape — narrow at top (the projector point), wide at bottom (the floor) */
-  clip-path: polygon(48% 0, 52% 0, 100% 100%, 0 100%);
+  width: var(--beam-w, 12vw);
+  height: 135vh;
+  /* Thin cone — a near-point at the projector, fanning out toward the floor. */
+  clip-path: polygon(49.3% 0, 50.7% 0, 100% 100%, 0 100%);
+  /* Hot at the projector, attenuating with distance. Colour via --c
+     (space-separated rgb channels, e.g. "255 0 153"). */
   background: linear-gradient(
     180deg,
-    rgba(255, 0, 153, 0.85) 0%,
-    rgba(255, 0, 153, 0.45) 25%,
-    rgba(255, 0, 153, 0.18) 60%,
-    rgba(255, 0, 153, 0)    100%
+    rgb(var(--c, 255 0 153) / 0.95) 0%,
+    rgb(var(--c, 255 0 153) / 0.55) 22%,
+    rgb(var(--c, 255 0 153) / 0.18) 55%,
+    rgb(var(--c, 255 0 153) / 0)    100%
   );
-  filter: blur(14px);
+  filter: blur(5px) brightness(1.1);
   transform-origin: 50% 0;
   transform: translateX(-50%) rotate(var(--base-angle));
   opacity: 0;
-  animation: chaewon-laser-fan 2.6s ease-in-out 1 forwards;
-  mix-blend-mode: screen;  /* now blends only with sibling beams in the stage */
+  mix-blend-mode: screen;
+  will-change: transform, opacity;
 }
 
-@keyframes chaewon-laser-fan {
-  0%   { transform: translateX(-50%) rotate(calc(var(--base-angle) - var(--sweep-amount))); opacity: 0; }
-  12%  { opacity: 1; }
-  50%  { transform: translateX(-50%) rotate(calc(var(--base-angle) + var(--sweep-amount))); opacity: 1; }
-  88%  { opacity: 1; }
-  100% { transform: translateX(-50%) rotate(calc(var(--base-angle) - var(--sweep-amount))); opacity: 0; }
+/* Each beam sweeps on its own duration/range (set inline in spawnLasers) so the
+   beams scissor and cross like a real show, with small opacity pulses to the
+   "beat" rather than one smooth fade. */
+@keyframes chaewon-laser-sweep {
+  0%   { transform: translateX(-50%) rotate(calc(var(--base-angle) - var(--sweep)));        opacity: 0; }
+  8%   { opacity: 1; }
+  20%  { opacity: 0.6; }
+  24%  { opacity: 1; }
+  30%  { transform: translateX(-50%) rotate(calc(var(--base-angle) + var(--sweep))); }
+  46%  { transform: translateX(-50%) rotate(calc(var(--base-angle) - var(--sweep) * 0.55)); opacity: 0.7; }
+  51%  { opacity: 1; }
+  68%  { transform: translateX(-50%) rotate(calc(var(--base-angle) + var(--sweep) * 0.9)); }
+  80%  { opacity: 0.65; }
+  84%  { opacity: 1; }
+  100% { transform: translateX(-50%) rotate(calc(var(--base-angle) - var(--sweep)));        opacity: 0; }
+}
+
+/* A bright bloom at each projector point so beams look emitted, not floating. */
+.chaewon-laser-origin {
+  position: absolute;
+  top: -12px;
+  width: 72px;
+  height: 72px;
+  margin-left: -36px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.95) 0%, rgba(255, 120, 190, 0.5) 35%, transparent 70%);
+  filter: blur(2px);
+  mix-blend-mode: screen;
+  opacity: 0;
+  animation: chaewon-laser-origin-pulse var(--dur, 3s) ease-in-out forwards;
+}
+@keyframes chaewon-laser-origin-pulse {
+  0%, 100% { opacity: 0;    transform: scale(0.5); }
+  10%      { opacity: 1; }
+  50%      { opacity: 0.85; transform: scale(1.15); }
+  88%      { opacity: 0.85; }
 }
 
 /* EASY: glow on photos (unchanged). */
@@ -472,4 +596,49 @@ body.chaewon-mode.chaewon-egg-easy img {
   0%   { opacity: 0; transform: scale(0.4); }
   45%  { opacity: 1; transform: scale(1.35); }
   100% { opacity: 0; transform: scale(0.5); }
+}
+
+/* PERFECTNIGHT: occasional shooting stars streaking diagonally, on top of the
+   twinkling field, so the night sky reads as alive rather than a static glyph grid. */
+.chaewon-shooting-star {
+  position: fixed;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 8px 2px rgba(255, 255, 255, 0.9);
+  pointer-events: none;
+  z-index: 1000;
+  opacity: 0;
+}
+.chaewon-shooting-star::after {
+  content: '';
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  width: 140px;
+  height: 2px;
+  transform: translateY(-50%);
+  background: linear-gradient(270deg, rgba(255, 255, 255, 0.85), transparent);
+}
+@keyframes chaewon-shoot {
+  0%   { opacity: 0; transform: translate(0, 0) rotate(18deg); }
+  12%  { opacity: 1; }
+  100% { opacity: 0; transform: translate(42vw, 24vh) rotate(18deg); }
+}
+
+/* Accessibility: honor prefers-reduced-motion. The full-screen color-flashing
+   background is the priority (photosensitivity); also still the marquees and
+   headshot breath/pulse. The static maximalist look (Comic Sans, dark cards,
+   hearts) stays — only the looping motion is suppressed. The bubble layer and
+   cursor trail are already skipped in JS under reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  body.chaewon-mode .chaewon-bg-row span {
+    animation: none !important;
+    color: #ff6a99 !important;
+  }
+  body.chaewon-mode .chaewon-marquee-inner { animation: none !important; }
+  body.chaewon-mode img.chaewon-headshot,
+  body.chaewon-mode .chaewon-headshot-sticker { animation: none !important; }
+  body.chaewon-mode .chaewon-card { transition: none !important; }
 }

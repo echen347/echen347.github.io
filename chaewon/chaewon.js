@@ -33,7 +33,8 @@
     ensureMarquees();
     ensureBackground();
     decorateHeadshot();
-    // Subsequent phases will hook in here: assets, marquee, bubbles, etc.
+    preloadPhotos();      // warm the image cache for the SMC reskin + bubbles
+    ensureBubbles();      // floating Chaewon photo bubbles on the bio page
   }
 
   function deactivate() {
@@ -46,6 +47,7 @@
     removeMarquees();
     removeBackground();
     undecorateHeadshot();
+    removeBubbles();
     if (_idleTimer) { clearTimeout(_idleTimer); _idleTimer = null; }
     // Subsequent phases: cleanup listeners, restore SMC rendering, etc.
   }
@@ -56,13 +58,17 @@
   // Pre-sorted longest-first to avoid shadowing during match. Recomputed only at module load.
   const SORTED_TRIGGERS = [...TRIGGERS].sort((a, b) => b.length - a.length);
 
-  // Placeholder phrase rotation — see spec §10 for tone framing
+  // Deep-cut LE SSERAFIM / Chaewon references — eras, songs, nickname, fandom,
+  // her birthday. Celebrate Chaewon (see spec §10 tone rule). Edit freely.
   const MARQUEE_PHRASES = [
-    'STAN CHAEWON',
-    'STREAM CRAZY',
-    'KIM CHAEWON IS PEAK PERFORMANCE',
-    'LE SSERAFIM FOREVER',
-    'CHAEWON WORLD DOMINATION',
+    'STAN KIM CHAEWON',
+    'KKURA OUR LEADER',
+    'EASY CRAZY HOT',
+    'ANTIFRAGILE ON REPEAT',
+    'UNFORGIVEN ERA SUPREMACY',
+    'PERFECT NIGHT WITH CHAEWON',
+    'FEARNOT FOREVER',
+    'AUG 1 = NATIONAL HOLIDAY',
   ];
 
   function buildMarqueeContent() {
@@ -139,6 +145,155 @@
   window.ChaewonMode.loadManifest = loadManifest;
   window.ChaewonMode.assetUrl = assetUrl;
 
+  // ---------- Photo preloading (drives the SMC reskin + bubble layer) ----------
+  // Bubble photos are preloaded into HTMLImageElements once per session so the
+  // homepage SMC canvas (index.html) can drawImage() them without a mid-render
+  // network fetch. randomPhoto() returns null until at least one has decoded, so
+  // callers should fall back gracefully and retry on a later frame.
+  let _photoImages = [];
+  let _photoPreloadStarted = false;
+  async function preloadPhotos() {
+    if (_photoPreloadStarted) return _photoImages;
+    _photoPreloadStarted = true;
+    const manifest = await loadManifest();
+    _photoImages = manifest.bubbles.map(b => {
+      const img = new Image();
+      img.src = assetUrl(b.file);
+      img.alt = b.alt || 'chaewon';
+      return { img, alt: img.alt };
+    });
+    return _photoImages;
+  }
+  function loadedPhotos() {
+    return _photoImages.filter(p => p.img.complete && p.img.naturalWidth > 0).map(p => p.img);
+  }
+  function randomPhoto() {
+    const ready = loadedPhotos();
+    return ready.length ? ready[Math.floor(Math.random() * ready.length)] : null;
+  }
+  window.ChaewonMode.preloadPhotos = preloadPhotos;
+  window.ChaewonMode.loadedPhotos = loadedPhotos;
+  window.ChaewonMode.randomPhoto = randomPhoto;
+
+  // ---------- Floating Chaewon bubble layer (every page) ----------
+  // Gentle drift-and-bounce (no gravity pile-up, so the bio stays readable).
+  // Each bubble: hover to pause + zoom, click to pop into a heart burst + respawn.
+  // Skipped entirely under prefers-reduced-motion.
+  const BUBBLE_COUNT = 9;
+  let _bubbleLayer = null;
+  let _bubbles = [];
+  let _bubbleRAF = null;
+  let _bubbleRetry = null;
+  let _bubbleRetryCount = 0;
+  const _reduceMotion = window.matchMedia &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  async function ensureBubbles() {
+    if (_bubbleLayer || _reduceMotion) return;
+    await preloadPhotos();
+    const photos = loadedPhotos();
+    if (!photos.length) {
+      // Images still decoding — retry while still active. Tracked (so deactivate
+      // can cancel it) and capped (so a permanently-failing manifest can't
+      // re-arm the timer forever).
+      if (_bubbleRetry) { clearTimeout(_bubbleRetry); _bubbleRetry = null; }
+      if (_bubbleRetryCount < 12) {
+        _bubbleRetryCount++;
+        _bubbleRetry = setTimeout(() => {
+          _bubbleRetry = null;
+          if (state.active) ensureBubbles();
+        }, 400);
+      }
+      return;
+    }
+    _bubbleRetryCount = 0;
+    if (_bubbleLayer || !state.active) return; // guard against double-init after await
+    _bubbleLayer = document.createElement('div');
+    _bubbleLayer.id = 'chaewon-bubbles';
+    _bubbleLayer.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(_bubbleLayer);
+
+    const vw = window.innerWidth, vh = window.innerHeight;
+    _bubbles = [];
+    for (let i = 0; i < BUBBLE_COUNT; i++) {
+      const size = 52 + Math.random() * 42;
+      const wrap = document.createElement('div');
+      wrap.className = 'chaewon-bubble-wrap';
+      const bubble = document.createElement('div');
+      bubble.className = 'chaewon-bubble';
+      const img = document.createElement('img');
+      img.src = photos[i % photos.length].src;
+      img.alt = 'chaewon';
+      bubble.style.width = bubble.style.height = `${size}px`;
+      bubble.appendChild(img);
+      wrap.appendChild(bubble);
+      _bubbleLayer.appendChild(wrap);
+      const b = {
+        wrap, bubble, size,
+        x: Math.random() * (vw - size),
+        y: Math.random() * (vh - size),
+        vx: (Math.random() - 0.5) * 0.9,
+        vy: (Math.random() - 0.5) * 0.9,
+        paused: false,
+      };
+      bubble.addEventListener('mouseenter', () => { b.paused = true; });
+      bubble.addEventListener('mouseleave', () => { b.paused = false; });
+      bubble.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        spawnClickBurst(b.x + b.size / 2, b.y + b.size / 2);
+        popBubble(b);
+      });
+      _bubbles.push(b);
+    }
+    if (!_bubbleRAF) _bubbleRAF = requestAnimationFrame(stepBubbles);
+  }
+
+  function popBubble(b) {
+    b.bubble.classList.add('chaewon-bubble-popping');
+    b._popTimer = setTimeout(() => {
+      b._popTimer = null;
+      const photos = loadedPhotos();
+      if (photos.length) {
+        b.bubble.querySelector('img').src =
+          photos[Math.floor(Math.random() * photos.length)].src;
+      }
+      b.bubble.classList.remove('chaewon-bubble-popping');
+      // Respawn drifting in from the top edge.
+      b.x = Math.random() * (window.innerWidth - b.size);
+      b.y = -b.size;
+      b.vx = (Math.random() - 0.5) * 0.9;
+      b.vy = 0.35 + Math.random() * 0.5;
+      b.paused = false;
+    }, 340);
+  }
+
+  function stepBubbles() {
+    if (!state.active || !_bubbleLayer) { _bubbleRAF = null; return; }
+    const vw = window.innerWidth, vh = window.innerHeight;
+    for (const b of _bubbles) {
+      if (!b.paused) { b.x += b.vx; b.y += b.vy; }
+      // Clamp every frame — even while paused/hovered — so shrinking the window
+      // can't strand a bubble outside the clipped layer.
+      if (b.x <= 0) { b.x = 0; b.vx = Math.abs(b.vx); }
+      else if (b.x + b.size >= vw) { b.x = vw - b.size; b.vx = -Math.abs(b.vx); }
+      if (b.y <= 0) { b.y = 0; b.vy = Math.abs(b.vy); }
+      else if (b.y + b.size >= vh) { b.y = vh - b.size; b.vy = -Math.abs(b.vy); }
+      b.wrap.style.transform = `translate(${b.x}px, ${b.y}px)`;
+    }
+    _bubbleRAF = requestAnimationFrame(stepBubbles);
+  }
+
+  function removeBubbles() {
+    if (_bubbleRAF) { cancelAnimationFrame(_bubbleRAF); _bubbleRAF = null; }
+    if (_bubbleRetry) { clearTimeout(_bubbleRetry); _bubbleRetry = null; }
+    for (const b of _bubbles) {
+      if (b._popTimer) { clearTimeout(b._popTimer); b._popTimer = null; }
+    }
+    if (_bubbleLayer) { _bubbleLayer.remove(); _bubbleLayer = null; }
+    _bubbles = [];
+    _bubbleRetryCount = 0;
+  }
+
   function handleKeydown(e) {
     const key = e.key;
     if (typeof key !== 'string' || key.length !== 1) return;
@@ -176,9 +331,11 @@
     for (let i = 0; i < count; i++) {
       const petal = document.createElement('span');
       petal.className = 'chaewon-petal';
-      petal.textContent = '🌸';
+      const glyphs = ['🌸', '🌷', '❀', '✿', '🌺'];
+      petal.textContent = glyphs[Math.floor(Math.random() * glyphs.length)];
       petal.style.left = `${Math.random() * 100}vw`;
       petal.style.fontSize = `${14 + Math.random() * 22}px`;
+      if (Math.random() < 0.3) petal.style.filter = 'blur(1.5px)'; // depth-of-field
       const duration = 2.8 + Math.random() * 2.2; // 2.8s to 5s
       const delay = Math.random() * 1.5;
       const swayDir = Math.random() < 0.5 ? 1 : -1;
@@ -193,6 +350,7 @@
 
   function spawnStars() {
     const count = 60;
+    const tints = ['#ffffff', '#cfe3ff', '#ffd9ec', '#fff4c2']; // white / blue / pink / warm
     for (let i = 0; i < count; i++) {
       const star = document.createElement('span');
       star.className = 'chaewon-star';
@@ -200,52 +358,86 @@
       star.style.left = `${Math.random() * 100}vw`;
       star.style.top = `${Math.random() * 100}vh`;
       star.style.fontSize = `${8 + Math.random() * 20}px`;
+      star.style.color = tints[Math.floor(Math.random() * tints.length)];
       const duration = 0.8 + Math.random() * 1.8; // 0.8s to 2.6s per twinkle
       const delay = Math.random() * 1.8;
       star.style.animation = `chaewon-star-twinkle ${duration}s ease-in-out ${delay}s forwards`;
       document.body.appendChild(star);
       setTimeout(() => star.remove(), (duration + delay) * 1000 + 200);
     }
+    // A few shooting stars streaking diagonally across the field.
+    for (let i = 0; i < 4; i++) {
+      const shoot = document.createElement('div');
+      shoot.className = 'chaewon-shooting-star';
+      shoot.style.left = `${Math.random() * 55}vw`;
+      shoot.style.top = `${Math.random() * 45}vh`;
+      const dur = 0.7 + Math.random() * 0.6;
+      const delay = 0.3 + Math.random() * 2.4;
+      shoot.style.animation = `chaewon-shoot ${dur}s ease-in ${delay}s forwards`;
+      document.body.appendChild(shoot);
+      setTimeout(() => shoot.remove(), (dur + delay) * 1000 + 200);
+    }
   }
 
   function spawnLasers() {
-    // Dim overlay — fades the page underneath so the laser beams stand out
-    // (mimics how a concert venue darkens during a laser show).
-    const dim = document.createElement('div');
-    dim.className = 'chaewon-laser-dim';
-    document.body.appendChild(dim);
+    // Concert laser show. Three projectors (two corners + center) each emit a fan
+    // of thin, multi-colored beams. Every beam gets its own sweep range, duration,
+    // delay, width, and color, so they scissor and cross instead of moving as one
+    // rigid fan — that independence is what reads as "real" rather than canned.
+    const palette = [
+      '255 0 153',   // magenta-pink
+      '255 70 90',   // red
+      '150 90 255',  // violet
+      '60 200 255',  // cyan
+      '255 255 255', // white
+    ];
+    const projectors = [
+      { x: '12vw', base: 30 },
+      { x: '50vw', base: 0 },
+      { x: '88vw', base: -30 },
+    ];
+    const beamsPer = 5;
+    const spread = 17;
 
-    // Stage wraps all 8 beams in an isolated stacking context so mix-blend-mode
-    // on the beams blends them with each other (overlap brightens) but doesn't
-    // pull color from the page beneath the stage.
     const stage = document.createElement('div');
     stage.className = 'chaewon-laser-stage';
-
-    const projectors = [
-      { x: '15vw', baseAngle: 25 },
-      { x: '85vw', baseAngle: -25 },
-    ];
-    const beamsPerProjector = 4;
-    const fanSpread = 14;
+    let maxEnd = 0;
 
     projectors.forEach((proj) => {
-      for (let b = 0; b < beamsPerProjector; b++) {
+      for (let b = 0; b < beamsPer; b++) {
         const beam = document.createElement('div');
         beam.className = 'chaewon-laser-beam';
         beam.style.left = proj.x;
-        const fanOffset = (b - (beamsPerProjector - 1) / 2) * fanSpread;
-        beam.style.setProperty('--base-angle', `${proj.baseAngle + fanOffset}deg`);
-        beam.style.setProperty('--sweep-amount', '22deg');
-        beam.style.animationDelay = `${b * 0.08}s`;
+        const fanOffset = (b - (beamsPer - 1) / 2) * spread + (Math.random() - 0.5) * 6;
+        const dur = 2.0 + Math.random() * 1.5;
+        const delay = Math.random() * 0.5;
+        beam.style.setProperty('--base-angle', `${proj.base + fanOffset}deg`);
+        beam.style.setProperty('--sweep', `${14 + Math.random() * 16}deg`);
+        beam.style.setProperty('--c', palette[Math.floor(Math.random() * palette.length)]);
+        beam.style.setProperty('--beam-w', `${8 + Math.random() * 10}vw`);
+        beam.style.animation = `chaewon-laser-sweep ${dur}s ease-in-out ${delay}s forwards`;
         stage.appendChild(beam);
+        maxEnd = Math.max(maxEnd, dur + delay);
       }
+      const origin = document.createElement('div');
+      origin.className = 'chaewon-laser-origin';
+      origin.style.left = proj.x;
+      stage.appendChild(origin);
     });
 
+    // Run the projector blooms and the page-dim for the full length of the show.
+    stage.querySelectorAll('.chaewon-laser-origin').forEach(o => {
+      o.style.setProperty('--dur', `${maxEnd}s`);
+    });
+    const dim = document.createElement('div');
+    dim.className = 'chaewon-laser-dim';
+    dim.style.animationDuration = `${maxEnd}s`;
+    document.body.appendChild(dim);
     document.body.appendChild(stage);
     setTimeout(() => {
       stage.remove();
       dim.remove();
-    }, 3200);
+    }, (maxEnd + 0.4) * 1000);
   }
 
   // ---------- Exit button ----------
@@ -418,7 +610,7 @@
     setTimeout(() => heart.remove(), 700);
   }
   function handleMouseMove(e) {
-    if (!state.active) return;
+    if (!state.active || _reduceMotion) return;
     const now = performance.now();
     if (now - _cursorTrailLastTime < 50) return;
     _cursorTrailLastTime = now;
@@ -472,21 +664,24 @@
   // ---------- Idle attention-grab popup (Phase 5.4) ----------
   // Placeholder lines — see spec §10 for tone framing
   const IDLE_LINES = [
-    'WHERE U GOING?? KEEP STANNING ♡',
-    'CHAEWON MISSES YOU ♡',
+    'WHERE U GOING?? GO STREAM UNFORGIVEN ♡',
+    'KKURA MISSES YOU ♡',
     'STREAM CRAZY!!! ♡',
-    'COME BACK!! ♡♡♡',
+    'PERFECT NIGHT IS RIGHT THERE ♡♡♡',
   ];
 
   // ---------- Heading hover stan-translations (Phase 5.5) ----------
+  // Keys must exactly match a heading's text (lowercased) to fire on hover.
+  // index.html headings: Research / Publications / Contact.
+  // academic.html: the two "Highlighted ... Coursework" h4s.
+  // writing.html: Featured Post. (photography.html has no main headings.)
   const HEADING_TRANSLATIONS = {
-    'publications': 'WHAT I DO WHEN NOT STANNING CHAEWON ♡',
-    'research': 'BETWEEN STREAMING CRAZY ON REPEAT ♡',
+    'research': 'PROVING THEOREMS BETWEEN UNFORGIVEN STREAMS ♡',
+    'publications': 'WHAT I DO BETWEEN EASY CRAZY HOT REPLAYS ♡',
     'contact': 'DM ME UR CHAEWON FANCAMS ♡',
-    'coursework': 'STUDYING WHILE LISTENING TO ANTIFRAGILE ♡',
-    'in progress': 'STUDYING WHILE LISTENING TO ANTIFRAGILE ♡',
-    'mathematics': 'MATH WHILE STREAMING CRAZY ♡',
-    'cs/ece': 'CODING WITH CHAEWON ON LOOP ♡',
+    'highlighted mathematics coursework': 'MATH I GRIND BETWEEN CRAZY STREAMS ♡',
+    'highlighted computer science & ece coursework': 'CS I STUDY TO EDIT BETTER FANCAMS ♡',
+    'featured post': 'WROTE THIS BETWEEN PERFECT NIGHT REPLAYS ♡',
   };
   function lookupTranslation(text) {
     if (!text) return null;
