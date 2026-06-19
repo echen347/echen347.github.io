@@ -34,6 +34,7 @@
     decorateHeadshot();
     preloadPhotos();      // warm the image cache for the SMC reskin + bubbles
     ensureBubbles();      // floating Chaewon photo bubbles on the bio page
+    injectStanContent();  // per-page stan comments / intro (no-op where N/A)
     // First manual activation per browser plays the reveal cinematic.
     if (!skipCinematic && !hasFirstSeen()) playCinematic();
     markFirstSeen();
@@ -51,6 +52,7 @@
     undecorateHeadshot();
     removeBubbles();
     endCinematic();
+    removeStanContent();
     if (_idleTimer) { clearTimeout(_idleTimer); _idleTimer = null; }
     // Subsequent phases: cleanup listeners, restore SMC rendering, etc.
   }
@@ -349,6 +351,48 @@
     if (_cineTimer) { clearTimeout(_cineTimer); _cineTimer = null; }
     _cineEls.forEach(el => el.remove());
     _cineEls = [];
+  }
+
+  // ---------- Per-page stan content injection ----------
+  // Safe to run on every page: each injector no-ops where its anchors are absent
+  // (the course matcher only fires on a known course code; the writing intro only
+  // fires when the "Featured Post" heading exists).
+  function injectStanContent() {
+    injectAcademicComments();
+    injectWritingIntro();
+  }
+
+  function injectAcademicComments() {
+    document.querySelectorAll('main li').forEach(li => {
+      if (li.querySelector('.chaewon-stan-comment')) return; // idempotent
+      const colon = li.textContent.indexOf(':');
+      if (colon < 0) return;
+      const code = li.textContent.slice(0, colon).replace(/^\*/, '').trim();
+      const comment = COURSE_COMMENTS[code];
+      if (!comment) return;
+      const span = document.createElement('span');
+      span.className = 'chaewon-stan-comment';
+      span.textContent = comment;
+      li.appendChild(span);
+    });
+  }
+
+  function injectWritingIntro() {
+    const main = document.querySelector('main');
+    if (!main || main.querySelector('.chaewon-stan-intro')) return;
+    const hasFeatured = [...main.querySelectorAll('h1, h2, h3')]
+      .some(h => /featured post/i.test(h.textContent));
+    if (!hasFeatured) return;
+    // NOT a .chaewon-card — it styles itself like one. Using the card class would
+    // make removeCardClassMarkers() unwrap it on deactivate and orphan its text.
+    const card = document.createElement('div');
+    card.className = 'chaewon-stan-intro';
+    card.textContent = WRITING_INTRO;
+    main.insertBefore(card, main.firstChild);
+  }
+
+  function removeStanContent() {
+    document.querySelectorAll('.chaewon-stan-comment, .chaewon-stan-intro').forEach(el => el.remove());
   }
 
   function handleKeydown(e) {
@@ -740,6 +784,26 @@
     'highlighted computer science & ece coursework': 'CS I STUDY TO EDIT BETTER FANCAMS ♡',
     'featured post': 'WROTE THIS BETWEEN PERFECT NIGHT REPLAYS ♡',
   };
+
+  // Per-page stan content. Tone rule (spec §10): celebrate Chaewon, frame
+  // Ethan's work as something he does between/while stanning — never praise
+  // Ethan. Placeholders in his voice; edit freely.
+  // Keyed by course code exactly as it appears before the ":" in academic.html.
+  const COURSE_COMMENTS = {
+    'MATH 8803 RIE': "optimal transport, but the only mass i need moved is chaewon higher up my recommended page ♡",
+    'MATH 6221': "computing expectations between EASY CRAZY HOT replays ♡",
+    'MATH 7339': "epsilon–delta proofs go down smoother with PERFECT NIGHT on loop ♡",
+    'MATH 6579': "survived measure theory psets purely on ANTIFRAGILE energy ♡",
+    'MATH 6121': "group theory, but the only group i study religiously is LE SSERAFIM ♡",
+    'ECE 6756': "online learning so i can predict chaewon's next hair color in real time ♡",
+    'ECE 6254': "learned statistical ML mostly to analyze chaewon fancams more rigorously ♡",
+    'CS 4650': "NLP so i can finally parse what FEARNOT is screaming in the comments ♡",
+    'CSE 8803 IUQ': "quantifying uncertainty in everything except my devotion to kkura ♡",
+    'CS 8803 DTA': "optimization, sampling, and games — still my best sample is her discography ♡",
+    'ECE 8803 GDL': "generative models, none of which generate enough chaewon content ♡",
+  };
+  const WRITING_INTRO = "this is where ethan writes when he isn't busy stanning chaewon ♡ best read with PERFECT NIGHT on repeat ♡";
+
   function lookupTranslation(text) {
     if (!text) return null;
     return HEADING_TRANSLATIONS[text.trim().toLowerCase()] || null;
