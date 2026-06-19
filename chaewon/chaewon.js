@@ -646,7 +646,7 @@
     bg.setAttribute('aria-hidden', 'true');
     // Each row's text — repeat the phrase to widen each row so corners stay covered
     // even at low scale (rotation alone leaves narrow rows short of the corners).
-    const rowText = 'I LOVE CHAEWON I LOVE CHAEWON';
+    const rowText = 'I ♥ CHAEWON I ♥ CHAEWON';
     const rows = 12; // dense vertical fill
     const stagger = 0.06; // seconds between adjacent letters
     for (let row = 0; row < rows; row++) {
@@ -766,10 +766,10 @@
   // ---------- Idle attention-grab popup (Phase 5.4) ----------
   // Placeholder lines — see spec §10 for tone framing
   const IDLE_LINES = [
-    'WHERE U GOING?? GO STREAM UNFORGIVEN ♡',
-    'KKURA MISSES YOU ♡',
-    'STREAM CRAZY!!! ♡',
-    'PERFECT NIGHT IS RIGHT THERE ♡♡♡',
+    "where'd u go 😭 come back",
+    "kkura misses u fr",
+    "go stream crazy. NOW",
+    "she's right there. look at her",
   ];
 
   // ---------- Heading hover stan-translations (Phase 5.5) ----------
@@ -778,12 +778,12 @@
   // academic.html: the two "Highlighted ... Coursework" h4s.
   // writing.html: Featured Post. (photography.html has no main headings.)
   const HEADING_TRANSLATIONS = {
-    'research': 'PROVING THEOREMS BETWEEN UNFORGIVEN STREAMS ♡',
-    'publications': 'WHAT I DO BETWEEN EASY CRAZY HOT REPLAYS ♡',
-    'contact': 'DM ME UR CHAEWON FANCAMS ♡',
-    'highlighted mathematics coursework': 'MATH I GRIND BETWEEN CRAZY STREAMS ♡',
-    'highlighted computer science & ece coursework': 'CS I STUDY TO EDIT BETTER FANCAMS ♡',
-    'featured post': 'WROTE THIS BETWEEN PERFECT NIGHT REPLAYS ♡',
+    'research': "googling her schedule. that's the research",
+    'publications': "her discography clears my papers ngl",
+    'contact': "dm me kkura fancams ONLY",
+    'highlighted mathematics coursework': "math? no. thinking about kkura? yes",
+    'highlighted computer science & ece coursework': "should be coding, editing her fancams instead",
+    'featured post': "wrote this delulu, be nice 😭",
   };
 
   // Per-page stan content. Tone rule (spec §10): celebrate Chaewon, frame

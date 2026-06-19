@@ -188,7 +188,8 @@ body.chaewon-mode .chaewon-bg-row {
   white-space: nowrap;
   font-size: 110px;
   font-weight: 900;
-  letter-spacing: 12px;
+  letter-spacing: 3px;     /* tight within words so each word reads as a unit */
+  word-spacing: 44px;      /* wide between words so boundaries are obvious */
   font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   line-height: 1.1;
 }
