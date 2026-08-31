@@ -33,11 +33,17 @@
       margin-bottom: 1.5rem;
     }
 
-    .bio-flex p {
+    .bio-copy {
       flex-grow: 1;
-      margin-block-start: 0;
-      margin-block-end: 0;
       order: 1;
+    }
+
+    .bio-copy p:first-child {
+      margin-block-start: 0;
+    }
+
+    .bio-copy p:last-child {
+      margin-block-end: 0;
     }
 
     .bio-flex img {
@@ -361,37 +367,41 @@
   <main>
     <div class="bio-flex">
       <img src="headshot-cur-cruise.JPG" alt="Ethan Chen headshot">
-      <p>
-        Hi! I'm a third-year undergraduate at the Georgia Institute of Technology studying Mathematics. I am fortunate
-        to work with Prof. <a href="https://yongxin.ae.gatech.edu/" target="_blank">Yongxin Chen</a> and Prof. <a
-          href="https://amirmohan.github.io/" target="_blank">Amirali Aghazadeh</a> on the mathematical foundations of
-        machine learning. Outside of research, I enjoy <a href="photography.html" target="_blank">photography</a>, <a
-          href="writing.html" target="_blank">writing</a>, <a href="https://goodreads.com/chenthan"
-          target="_blank">reading</a>, <a href="https://open.spotify.com/user/wr0jckv0k3evlo7lhxntprlra"
-          target="_blank">listening to music</a>, and bouldering. In Summer 2025, I
-        participated in a REU at Williams College;
-        this summer I'm a Quantitative Trading Intern at Susquehanna International Group (SIG). I also serve as the
-        lead of quantitative research for Trading @ Georgia Tech.
-      </p>
+      <div class="bio-copy">
+        <p>
+          Hi! I'm a fourth-year undergraduate at the Georgia Institute of Technology studying Mathematics. This past
+          summer I was a Quantitative Trading Intern at <a href="https://sig.com/" target="_blank">Susquehanna
+            International Group (SIG)</a> in Chicago. I enjoy <a href="photography.html"
+            target="_blank">photography</a>, <a href="writing.html" target="_blank">writing</a>, <a
+            href="https://goodreads.com/chenthan" target="_blank">reading</a>, <a
+            href="https://open.spotify.com/user/wr0jckv0k3evlo7lhxntprlra" target="_blank">listening to music</a>, and
+          bouldering.
+        </p>
+        <p>
+          I am currently on an exchange semester at the <a href="https://www.hkust.edu.hk/" target="_blank">Hong Kong
+            University of Science and Technology (HKUST)</a>. After graduating, I will join a proprietary trading firm
+          in Chicago as a quantitative researcher.
+        </p>
+      </div>
     </div>
 
     <section>
       <h2>Research</h2>
       <p>
-        My research centers on reasoning about machine learning from mathematical first principles, with a particular
-        focus on high-dimensional probability, optimal transport, and geometric deep learning. Previously, I have
-        worked on structure-preserving generative models, including diffusion on Riemannian manifolds, normalizing
-        flows, geometric flow matching, sampling acceleration for discrete processes, and finite-sample convergence
-        for Sequential Monte Carlo on non-log-concave targets.
+        I was fortunate
+        to work with Prof. <a href="https://yongxin.ae.gatech.edu/" target="_blank">Yongxin Chen</a> and Prof. <a
+          href="https://amirmohan.github.io/" target="_blank">Amirali Aghazadeh</a> on the mathematical foundations of
+        machine learning.
+      </p>
+
+      <p>
+        My research centers on reasoning about machine learning from mathematical first principles, with a particular focus on algorithmic game theory, optimal transport, and applications to finance. Previously, I have worked on structure-preserving generative models, including diffusion on Riemannian manifolds, normalizing flows, geometric flow matching, sampling acceleration for discrete processes, and finite-sample convergence for Sequential Monte Carlo on non-log-concave targets.
       </p>
       <p>
-        My current focus is on sequential minimax games and their connections to martingale optimal transport, work
-        that appeared at the ICML 2026 NExTGame Workshop. I also work on uncertainty quantification for neural
-        surrogates of Wasserstein gradient flows. My earlier work on entropic martingale optimal transport appeared at
-        the ICLR 2026 Workshop on Advances in Financial AI.
+        My current focus is on sequential minimax games and their connections to martingale optimal transport, work that appeared at the ICML 2026 NExTGame Workshop. I also work on uncertainty quantification for neural surrogates of Wasserstein gradient flows. My earlier work on entropic martingale optimal transport appeared at the ICLR 2026 Workshop on Advances in Financial AI.
       </p>
       <p>
-        I am also interested in differential geometry, options pricing, and algorithmic game theory.
+        I am also interested in differential geometry, options pricing, and high-dimensional probability.
       </p>
 
       <h3>Publications</h3>
@@ -416,12 +426,12 @@
     </section>
   </main>
   <footer>
-    <p>&copy; 2026 Ethan Chen. All rights reserved. Last updated: 7/21/2026</p>
+    <p>&copy; 2026 Ethan Chen. All rights reserved. Last updated: 8/31/2026</p>
     <p>Powered by <a href="https://latex.vercel.app/" target="_blank">LaTeX.css</a></p>
   </footer>
 
   <script>
-    // --- Interactive Overlay Logic ---
+    // Interactive overlay logic
     const overlay = document.getElementById('interactive-overlay');
     const enterBtn = document.getElementById('enter-site-btn');
     const showInteractiveBtn = document.getElementById('show-interactive-btn');
@@ -451,7 +461,7 @@
 
     // Simulation State
     let frameCount = 0;
-    const MCMC_DURATION = 180; // Frames (approx 3s) 
+    const MCMC_DURATION = 180; // Frames (approx 3s)
     const RESAMPLE_DURATION = 45; // Frames (approx 0.75s) - Slightly longer
     let currentPhase = 'MCMC'; // 'MCMC' or 'RESAMPLE'
 
@@ -460,7 +470,7 @@
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
 
-      // Non-linear scaling for mobile: 
+      // Non-linear scaling for mobile:
       // Boosts scale on small screens so elements don't vanish
       const ratio = Math.min(canvas.width, canvas.height) / 800;
       scale = Math.max(0.6, Math.pow(ratio, 0.7));
@@ -473,12 +483,12 @@
     window.addEventListener('resize', resize);
 
 
-    // --- SMC Simulation Classes ---
+    // SMC simulation classes
 
     // Chaewon Mode reskin: particles render as cached heart sprites (far cheaper
     // than per-particle ctx.fillText at ~1000 particles), targets as circular
     // Chaewon photos. The math (Langevin drift, weights, resampling) is untouched
-    // — only draw() branches on body.chaewon-mode.
+    // Only draw() branches on body.chaewon-mode.
     let _cwHeartPink = null;
     let _cwHeartRed = null;
     function makeHeartSprite(color) {
@@ -813,7 +823,7 @@
       // 3. Apply Visual Strategy
       const newParticles = [];
 
-      // First, process existing particles based on their childrenToSpawn count
+      // Process existing particles based on their childrenToSpawn count
       particles.forEach(p => {
         if (p.childrenToSpawn === 0) {
           // This particle is a loser, mark it for dying animation
@@ -886,7 +896,7 @@
       ctx.fillStyle = gradient;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      // Hoist the chaewon-mode flag once per frame — the class can't change
+      // Cache the chaewon-mode flag once per frame because the class cannot change
       // mid-frame, so checking it per-particle (~1000×) was wasted DOM lookups.
       const cw = cwActive();
       targets.forEach(t => {
