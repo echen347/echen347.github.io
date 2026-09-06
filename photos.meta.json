@@ -1,0 +1,69 @@
+{
+  "_comment": "Metadata keyed by filename. Fields: alt (image description), theme (optional section), place (viewer caption), order (portfolio priority, lower values appear earlier). Edit order to change the sequence across the gallery, keyboard navigation, and lightbox. The page pairs adjacent upright photos and gives landscapes their own rows, preserving aspect ratios. Add a JPEG to photography/, add its metadata here, and run python3 generate_metadata.py.",
+  "uji-station-arches.jpg": {
+    "alt": "Repetitive concrete arches creating a tunnel effect inside Uji Station, Japan.",
+    "theme": "Architecture",
+    "place": "Uji, Japan",
+    "order": 4
+  },
+  "tokyo-tower-framed.jpg": {
+    "alt": "Tokyo Tower viewed through the narrow frame of an urban staircase.",
+    "theme": "Architecture",
+    "place": "Tokyo, Japan",
+    "order": 9
+  },
+  "oculus-nyc.jpg": {
+    "alt": "The Oculus structure with One World Trade Center rising in the background in New York City.",
+    "theme": "Architecture",
+    "place": "New York City",
+    "order": 2
+  },
+  "osaka-lion-shrine.jpg": {
+    "alt": "One eye of the lion at Namba Yasaka Shrine appears through hanging paper slips.",
+    "theme": "Architecture",
+    "place": "Osaka, Japan",
+    "order": 1
+  },
+  "sunset-coda.jpg": {
+    "alt": "Orange sunset sky beside a glass facade with vertical mullions.",
+    "theme": "Architecture",
+    "place": "",
+    "order": 6
+  },
+  "pine-branch-sunset.jpg": {
+    "alt": "A pine branch catches warm light against a softly blurred hillside and pale sky.",
+    "theme": "Landscape & Travel",
+    "place": "",
+    "order": 5
+  },
+  "rider-by-sea.jpg": {
+    "alt": "A rider sits on a seawall beside a red motorcycle, with ocean waves beyond and empty parking bays in the foreground.",
+    "theme": "Landscape & Travel",
+    "place": "",
+    "order": 8
+  },
+  "hong-kong-harbour-night.jpg": {
+    "alt": "Hong Kong's illuminated skyline beside the harbour, with a tall tower, orange roads, and dark mountains behind.",
+    "theme": "Architecture",
+    "place": "Hong Kong",
+    "order": 11
+  },
+  "japan-lantern-restaurant.jpg": {
+    "alt": "Red and cream lanterns frame an open restaurant doorway and diners.",
+    "theme": "Street",
+    "place": "Japan",
+    "order": 10
+  },
+  "umeda-sky-circle.jpg": {
+    "alt": "Steel escalators cross a circular opening in the roof, with clouds beyond.",
+    "theme": "Architecture",
+    "place": "Osaka, Japan",
+    "order": 7
+  },
+  "parking-exit.jpg": {
+    "alt": "A red EXIT sign on a concrete pillar stands among diagonal cables, painted arrows, and empty parking spaces.",
+    "theme": "Architecture",
+    "place": "",
+    "order": 3
+  }
+}

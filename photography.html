@@ -10,108 +10,241 @@
   <link rel="stylesheet" href="/chaewon/chaewon.css">
   <link rel="icon" href="./favicon.ico" type="image/x-icon">
   <script src="/chaewon/chaewon.js" defer></script>
-  <!-- EXIF Reader Library (REMOVED FOR PERFORMANCE) -->
-  <!-- <script src="https://cdn.jsdelivr.net/npm/exif-js"></script> -->
   <style>
-    body.lightbox-open {
-      overflow: hidden;
+    /* ---- Gallery breathing room: widen this page beyond the LaTeX.css text column ---- */
+    @media (min-width: 900px) {
+      body { max-width: 1180px; }
+    }
+    .intro { max-width: 68ch; margin: 1.5rem auto 0; text-align: center; }
+
+    body.lightbox-open { overflow: hidden; }
+
+    /* ---- Tokens ---- */
+    :root {
+      --photo-gap: 28px;
+      --photo-row-gap: clamp(36px, 6vw, 72px);
+      --mark: #3a5a78;             /* blueprint slate-blue for interaction */
+      --mark-mute: #8a857c;        /* secondary mono text */
+      --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Roboto Mono", Menlo, Consolas, monospace;
     }
 
+    /* ---- Sections ---- */
     .photo-gallery {
-      display: flex;
-      flex-direction: column;
-      gap: 1rem;
       opacity: 0;
       transition: opacity 0.6s ease-in-out;
     }
+    .photo-section { margin: 0 0 4.5rem; }
+    .photo-section:first-child { margin-top: 1rem; }
 
-    .photo-row {
+    .section-title {
+      font-family: var(--mono);
+      text-transform: uppercase;
+      letter-spacing: 0.34em;
+      text-indent: 0.34em;          /* re-center despite trailing letter-spacing */
+      font-size: 0.92rem;
+      font-weight: 600;
+      text-align: center;
+      color: inherit;
+      margin: 0 0 0.35rem;
+      border: none;                 /* defeat any LaTeX.css h2 underline */
+    }
+    .section-meta {
+      font-family: var(--mono);
+      text-align: center;
+      color: var(--mark-mute);
+      font-size: 0.7rem;
+      letter-spacing: 0.18em;
+      margin: 0 0 2.2rem;
+    }
+    /* The single stream's lone header (no title above it): give it room from the intro
+       so the mono datum reads as an intentional mark rather than a stray caption. */
+    .stream-meta { margin-top: 1.8rem; font-size: 0.74rem; }
+
+    /* Give each composition room; pair upright frames and let landscapes stand alone. */
+    .photo-grid {
       display: flex;
-      gap: 1rem;
+      flex-direction: column;
+      row-gap: var(--photo-row-gap);
+      column-gap: var(--photo-gap);
+    }
+    .photo-row {
+      display: grid;
+      width: 100%;
+      min-width: 0;
+      gap: var(--photo-gap);
+      align-self: center;
     }
 
-    .photo-row.is-centered {
-      justify-content: center;
-    }
-
-    .photo-row a {
+    .photo-tile {
+      position: relative;
+      display: block;
+      min-width: 0;
       line-height: 0;
       cursor: pointer;
       overflow: hidden;
-      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.03);
     }
-
-    .photo-row img {
-      /* No width/height here. JS will set it directly. */
+    .photo-tile img {
+      width: 100%;
+      height: auto;
       display: block;
-      /* Treat image as a block to avoid weird inline spacing. */
-      transition: transform 0.3s ease, filter 0.3s ease;
+    }
+    @media (max-width: 599px) {
+      body { padding-top: 1.5rem; }
+      header h1 { margin-top: 0; }
+      .stream-meta { margin: 1.1rem 0 1.4rem; }
     }
 
-    .photo-row a:hover img {
-      transform: scale(1.02);
-      filter: brightness(0.9);
+    /* ---- Signature: crop / registration marks revealed on hover ---- */
+    .photo-tile::after {
+      content: "";
+      position: absolute;
+      inset: 9px;
+      pointer-events: none;
+      opacity: 0;
+      --c: var(--mark);
+      --t: 1.5px;                   /* mark thickness */
+      --l: 15px;                    /* mark arm length */
+      background-image:
+        linear-gradient(var(--c), var(--c)), linear-gradient(var(--c), var(--c)),
+        linear-gradient(var(--c), var(--c)), linear-gradient(var(--c), var(--c)),
+        linear-gradient(var(--c), var(--c)), linear-gradient(var(--c), var(--c)),
+        linear-gradient(var(--c), var(--c)), linear-gradient(var(--c), var(--c));
+      background-repeat: no-repeat;
+      background-position:
+        left top, left top, right top, right top,
+        left bottom, left bottom, right bottom, right bottom;
+      background-size:
+        var(--l) var(--t), var(--t) var(--l), var(--l) var(--t), var(--t) var(--l),
+        var(--l) var(--t), var(--t) var(--l), var(--l) var(--t), var(--t) var(--l);
+      transition: opacity 0.25s ease;
     }
+    .photo-tile:hover::after,
+    .photo-tile:focus-visible::after { opacity: 0.9; }
+    .photo-tile:focus-visible { outline: 2px solid var(--mark); outline-offset: 2px; }
+    /* Suppress LaTeX.css's blue a:focus ring on mouse focus; keep the slate keyboard ring. */
+    .photo-tile:focus:not(:focus-visible) { outline: none; }
 
     .loading-placeholder {
-      min-height: 60vh;
+      min-height: 50vh;
       display: flex;
       justify-content: center;
       align-items: center;
-      font-style: italic;
-      color: #888;
+      font-family: var(--mono);
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      font-size: 0.72rem;
+      color: var(--mark-mute);
     }
 
-    /* Lightbox styles */
+    /* ---- Lightbox ---- */
     .lightbox {
       display: none;
       position: fixed;
+      inset: 0;
       z-index: 1000;
-      left: 0;
-      top: 0;
-      width: 100%;
-      height: 100%;
-      background-color: rgba(0, 0, 0, 0.92);
+      background: rgba(0, 0, 0, 0.93);
       justify-content: center;
       align-items: center;
     }
+    .lightbox.open { display: flex; }
 
-    .lightbox-content {
-      position: relative;
+    .lb-figure {
+      margin: 0;
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
+      max-width: 92vw;
     }
-
-    .lightbox-content img {
-      max-width: 90vw;
-      max-height: 85vh;
+    .lb-frame {
+      position: relative;
+      line-height: 0;
+      padding: 14px;                /* room for the crop marks to sit off the image */
+    }
+    .lb-frame img {
+      max-width: 88vw;
+      max-height: min(76vh, calc(100vh - 170px));
+      width: auto;
+      height: auto;
       object-fit: contain;
-      border-radius: 4px;
+      display: block;
     }
-
-    .lightbox-caption {
-      color: #ccc;
-      margin-top: 1rem;
-      font-family: monospace;
-      text-align: center;
-      font-size: 0.9em;
-    }
-
-    .close-lightbox {
+    /* same registration marks framing the lightbox image */
+    .lb-frame::after {
+      content: "";
       position: absolute;
-      top: 15px;
-      right: 35px;
-      color: #f1f1f1;
-      font-size: 40px;
-      font-weight: bold;
-      cursor: pointer;
-      transition: color 0.2s;
+      inset: 0;
+      pointer-events: none;
+      --c: rgba(255, 255, 255, 0.6);
+      --t: 1.5px;
+      --l: 20px;
+      background-image:
+        linear-gradient(var(--c), var(--c)), linear-gradient(var(--c), var(--c)),
+        linear-gradient(var(--c), var(--c)), linear-gradient(var(--c), var(--c)),
+        linear-gradient(var(--c), var(--c)), linear-gradient(var(--c), var(--c)),
+        linear-gradient(var(--c), var(--c)), linear-gradient(var(--c), var(--c));
+      background-repeat: no-repeat;
+      background-position:
+        left top, left top, right top, right top,
+        left bottom, left bottom, right bottom, right bottom;
+      background-size:
+        var(--l) var(--t), var(--t) var(--l), var(--l) var(--t), var(--t) var(--l),
+        var(--l) var(--t), var(--t) var(--l), var(--l) var(--t), var(--t) var(--l);
     }
 
-    .close-lightbox:hover {
-      color: #ccc;
+    .lb-caption {
+      margin-top: 1.1rem;
+      font-family: var(--mono);
+      text-align: center;
+      line-height: 1.6;
+    }
+    .lb-place {
+      color: #f1f1f1;
+      font-size: 0.82rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+    .lb-exif {
+      color: #b6b6b6;
+      font-size: 0.74rem;
+      letter-spacing: 0.04em;
+      margin-top: 0.25rem;
+    }
+    .lb-original {
+      display: inline-block;
+      color: #ddd;
+      font-family: var(--mono);
+      font-size: 0.74rem;
+      margin-top: 0.65rem;
+    }
+
+    .lb-btn {
+      position: absolute;
+      z-index: 1;
+      background: none;
+      border: none;
+      color: #f1f1f1;
+      cursor: pointer;
+      font-weight: 300;
+      line-height: 1;
+      transition: color 0.2s, transform 0.2s;
+      user-select: none;
+    }
+    .lb-btn:hover { color: #fff; }
+    .lb-close { top: 18px; right: 28px; font-size: 38px; }
+    .lb-prev, .lb-next { top: 50%; transform: translateY(-50%); font-size: 54px; padding: 0 18px; }
+    .lb-prev { left: 8px; }
+    .lb-next { right: 8px; }
+    .lb-prev:hover { transform: translateY(-50%) translateX(-3px); }
+    .lb-next:hover { transform: translateY(-50%) translateX(3px); }
+    .lb-btn:focus-visible { outline: 2px solid var(--mark); outline-offset: 4px; }
+    @media (max-width: 599px) {
+      .lb-prev, .lb-next { font-size: 38px; padding: 0 8px; }
+    }
+
+    /* ---- Respect reduced-motion ---- */
+    @media (prefers-reduced-motion: reduce) {
+      .photo-gallery, .photo-tile::after, .lb-btn { transition: none; }
     }
   </style>
 </head>
@@ -128,295 +261,359 @@
     </center>
   </header>
   <main>
-    <p>A selection of my favorite shots. Click on an image to view it in a lightbox and see the settings used. More on
-      <a href="https://www.instagram.com/notaprimelens/" target="_blank">Instagram</a>.</p>
+    <p class="intro">Selected photographs. More on
+      <a href="https://www.instagram.com/notaprimelens/" target="_blank" rel="noopener">Instagram</a>.</p>
 
-    <div class="loading-placeholder" id="gallery-placeholder">Curating layout...</div>
+    <div class="loading-placeholder" id="gallery-placeholder">Developing…</div>
     <div class="photo-gallery" id="photo-gallery">
-      <!-- Images will be loaded here by script -->
+      <!-- Sections + grids are built by the script below from window.photoData -->
     </div>
 
     <p><a href="/">Back to home</a></p>
   </main>
 
-  <div id="lightbox" class="lightbox">
-    <span class="close-lightbox" id="close-lightbox">&times;</span>
-    <div class="lightbox-content">
-      <img id="lightbox-img">
-      <div id="lightbox-caption" class="lightbox-caption"></div>
+  <div id="lightbox" class="lightbox" role="dialog" aria-modal="true" aria-label="Photo viewer" aria-hidden="true">
+    <button class="lb-btn lb-close" id="lb-close" type="button" aria-label="Close viewer">&times;</button>
+    <button class="lb-btn lb-prev" id="lb-prev" type="button" aria-label="Previous photo">&lsaquo;</button>
+    <button class="lb-btn lb-next" id="lb-next" type="button" aria-label="Next photo">&rsaquo;</button>
+    <div class="lb-figure">
+      <div class="lb-frame"><picture><source id="lb-webp" type="image/webp"><img id="lb-img" alt="" decoding="async"></picture></div>
+      <div class="lb-caption" id="lb-caption" aria-live="polite"></div>
+      <a id="lb-original" class="lb-original" target="_blank" rel="noopener">View original</a>
     </div>
   </div>
 
   <footer>
     <p>&copy; 2025 Ethan Chen. All rights reserved.</p>
-    <p>Powered by <a href="https://latex.vercel.app/" target="_blank">LaTeX.css</a></p>
+    <p>Powered by <a href="https://latex.vercel.app/" target="_blank" rel="noopener">LaTeX.css</a></p>
   </footer>
 
+  <!-- Generated by generate_metadata.py. Loaded as a plain <script> (not fetch) so file:// works. -->
+  <script src="photos.js"></script>
   <script>
-    // For a much faster experience, we now use pre-calculated image metadata.
-    // This avoids downloading all images and parsing them on the client's device.
-    window.addEventListener('load', function () {
-      // NOTE: To add, remove, or reorder photos, open `generate_metadata.html`
-      // in your browser, update the list, and paste the new output here.
-      const photoSources = [
-        {
-          "src": "photography/uji-station-arches.jpg",
-          "alt": "Repetitive concrete arches creating a tunnel effect inside Uji Station, Japan.",
-          "preference": 1,
-          "width": 1869,
-          "height": 2336,
-          "camera": "SONY ILCE-7M4",
-          "lens": "SIGMA 24-70mm F2.8 DG DN Art 019",
-          "focalLength": "24mm",
-          "shutterSpeed": "1/400s",
-          "aperture": "f/4",
-          "iso": "ISO 400"
-        },
-        {
-          "src": "photography/tokyo-tower-framed.jpg",
-          "alt": "Tokyo Tower viewed through the narrow frame of an urban staircase.",
-          "preference": 2,
-          "width": 4519,
-          "height": 6779,
-          "camera": "SONY ILCE-7M4",
-          "lens": "SIGMA 24-70mm F2.8 DG DN Art 019",
-          "focalLength": "24mm",
-          "shutterSpeed": "1/60s",
-          "aperture": "f/20",
-          "iso": "ISO 100"
-        },
-        {
-          "src": "photography/seoul-palace-roof.jpg",
-          "alt": "Symmetrical view of a traditional palace roof at Gyeongbokgung Palace in Seoul, South Korea.",
-          "preference": 3,
-          "width": 1864,
-          "height": 2796,
-          "camera": "SONY ILCE-7M4",
-          "lens": "SIGMA 24-70mm F2.8 DG DN Art 019",
-          "focalLength": "70mm",
-          "shutterSpeed": "1/500s",
-          "aperture": "f/7.1",
-          "iso": "ISO 100"
-        },
-        {
-          "src": "photography/oculus-nyc.jpg",
-          "alt": "The Oculus structure with One World Trade Center rising in the background in New York City.",
-          "preference": 4,
-          "width": 3847,
-          "height": 5770,
-          "camera": "FUJIFILM X100V",
-          "lens": "23mm F2 Fixed Lens",
-          "focalLength": "23mm",
-          "shutterSpeed": "1/125s",
-          "aperture": "f/11",
-          "iso": "ISO 200"
-        },
-        {
-          "src": "photography/osaka-lion-shrine.jpg",
-          "alt": "The iconic stone lion head stage at Namba Yasaka Shrine in Osaka, Japan.",
-          "preference": 5,
-          "width": 1723,
-          "height": 2585,
-          "camera": "SONY ILCE-7M4",
-          "lens": "SIGMA 24-70mm F2.8 DG DN Art 019",
-          "focalLength": "30.7mm",
-          "shutterSpeed": "1/250s",
-          "aperture": "f/4.5",
-          "iso": "ISO 100"
-        },
-        {
-          "src": "photography/byodo-in-photographer.jpg",
-          "alt": "A photographer captures the reflection of Byodo-in Temple (Phoenix Hall) in Uji, Japan.",
-          "preference": 6,
-          "width": 3504,
-          "height": 2336,
-          "camera": "SONY ILCE-7M4",
-          "lens": "SIGMA 24-70mm F2.8 DG DN Art 019",
-          "focalLength": "57.5mm",
-          "shutterSpeed": "1/1000s",
-          "aperture": "f/2.8",
-          "iso": "ISO 100"
-        },
-        {
-          "src": "photography/pine-branch-sunset.jpg",
-          "alt": "A lone pine tree branch silhouetted against a soft, blurred sunset background.",
-          "preference": 7,
-          "width": 3120,
-          "height": 2336,
-          "camera": "SONY ILCE-7M4",
-          "lens": "SIGMA 60-600mm F4.5-6.3 DG DN OS Sports 023",
-          "focalLength": "278.2mm",
-          "shutterSpeed": "1/200s",
-          "aperture": "f/5.6",
-          "iso": "ISO 100"
-        },
-        {
-          "src": "photography/rider-by-sea.jpg",
-          "alt": "A lone rider and their motorcycle parked on a cliff overlooking the sea at sunset.",
-          "preference": 8,
-          "width": 5943,
-          "height": 2487,
-          "camera": "SONY ILCE-7M4",
-          "lens": "SIGMA 24-70mm F2.8 DG DN Art 019",
-          "focalLength": "70mm",
-          "shutterSpeed": "1/250s",
-          "aperture": "f/10",
-          "iso": "ISO 100"
-        },
-        {
-          "src": "photography/wtc1.JPG",
-          "alt": "Upward view of One World Trade Center's converging glass facade in New York City.",
-          "preference": 9,
-          "width": 2864,
-          "height": 3818,
-          "camera": "Apple iPhone 14 Pro Max",
-          "lens": "iPhone 14 Pro Max back camera 9mm f/2.8",
-          "focalLength": "9mm",
-          "shutterSpeed": "1/60s",
-          "aperture": "f/2.8",
-          "iso": "ISO 32"
-        },
-        {
-          "src": "photography/sunset-coda.jpg",
-          "alt": "Orange sunset sky beside a glass facade with vertical mullions.",
-          "preference": 10,
-          "width": 5547,
-          "height": 3120,
-          "camera": "SONY ILCE-7M4",
-          "lens": "SIGMA 60-600mm F4.5-6.3 DG DN OS Sports 023",
-          "focalLength": "600mm",
-          "shutterSpeed": "1/80s",
-          "aperture": "f/6.3",
-          "iso": "ISO 400"
-        }
-      ];
+    (function () {
+      'use strict';
+      const data = (window.photoData && Array.isArray(window.photoData.sections))
+        ? window.photoData : { sections: [] };
 
       const gallery = document.getElementById('photo-gallery');
       const placeholder = document.getElementById('gallery-placeholder');
-      const lightbox = document.getElementById('lightbox');
-      const lightboxImg = document.getElementById('lightbox-img');
-      const lightboxCaption = document.getElementById('lightbox-caption');
-      const closeBtn = document.getElementById('close-lightbox');
 
-      function createRuleBasedLayout() {
-        const containerWidth = gallery.getBoundingClientRect().width;
-        const gap = parseFloat(getComputedStyle(document.documentElement).fontSize);
+      const SHOW_SECTIONS = false;  // single curated stream for now; set true to group by theme
+      const flat = [];              // flat, in-render-order list for lightbox prev/next
 
-        const photosWithData = photoSources
-          .sort((a, b) => a.preference - b.preference)
-          .map(p => ({ ...p, ratio: p.width / p.height }));
-
-        gallery.innerHTML = '';
-
-        let i = 0;
-        while (i < photosWithData.length) {
-          const rowDiv = document.createElement('div');
-          rowDiv.className = 'photo-row';
-
-          const photo1 = photosWithData[i];
-
-          if (photo1.ratio > 2.2) {
-            const rowHeight = containerWidth / photo1.ratio;
-            const link = document.createElement('a');
-            link.onclick = () => openLightbox(photo1);
-            const imgEl = document.createElement('img');
-            imgEl.src = photo1.src;
-            imgEl.alt = photo1.alt;
-            imgEl.style.height = `${rowHeight}px`;
-            imgEl.style.width = `${containerWidth}px`;
-            link.appendChild(imgEl);
-            rowDiv.appendChild(link);
-            gallery.appendChild(rowDiv);
-            i += 1;
-            continue;
+      function usePhotoSources(img, webp, photo, displayWidth, viewer) {
+        function srcset(sources) {
+          return sources.map(s => s.src + ' ' + s.width + 'w').join(', ');
+        }
+        const jpegSources = (photo.sources && photo.sources.jpeg) || [];
+        const webpSources = (photo.sources && photo.sources.webp) || [];
+        const fallback = jpegSources.length
+          ? jpegSources[Math.min(1, jpegSources.length - 1)].src
+          : (viewer ? photo.preview || photo.thumb : photo.thumb);
+        img.sizes = Math.max(1, Math.round(displayWidth)) + 'px';
+        webp.sizes = img.sizes;
+        if (webpSources.length) webp.srcset = srcset(webpSources);
+        else webp.removeAttribute('srcset');
+        if (jpegSources.length) img.srcset = srcset(jpegSources);
+        else img.removeAttribute('srcset');
+        if (fallback) img.src = fallback;
+        // A failed WebP request can fall back to JPEG without fetching an original.
+        img.onerror = function () {
+          if (webp.hasAttribute('srcset')) webp.removeAttribute('srcset');
+          else if (img.hasAttribute('srcset')) {
+            img.removeAttribute('srcset');
+            if (photo.thumb) img.src = photo.thumb;
           }
+        };
+      }
 
-          const photo2 = photosWithData[i + 1];
+      // ---- Build the DOM ----
+      function sectionMeta(photos) {
+        const n = photos.length;
+        const frames = n + (n === 1 ? ' frame' : ' frames');
+        // Capture years remain comparable across cameras and sensor formats.
+        const years = photos
+          .map(p => (p.date || '').slice(0, 4))
+          .filter(y => /^\d{4}$/.test(y));
+        if (!years.length) return frames;
+        const lo = years.reduce((a, b) => (a < b ? a : b));
+        const hi = years.reduce((a, b) => (a > b ? a : b));
+        const span = (lo === hi) ? lo : (lo + '–' + hi);
+        return frames + ' · ' + span;
+      }
 
-          if (photo2) {
-            const photosInRow = [photo1, photo2];
-            const totalRatio = photosInRow.reduce((acc, p) => acc + p.ratio, 0);
-            const rowHeight = (containerWidth - gap) / totalRatio;
+      function makeTile(p) {
+        const idx = flat.length;
+        flat.push(p);
+        const ratio = (p.width && p.height) ? (p.width / p.height) : 1;
 
-            photosInRow.forEach(p => {
-              const link = document.createElement('a');
-              link.onclick = () => openLightbox(p);
-              const imgEl = document.createElement('img');
-              imgEl.src = p.src;
-              imgEl.alt = p.alt;
-              imgEl.style.height = `${rowHeight}px`;
-              imgEl.style.width = `${p.ratio * rowHeight}px`;
-              link.appendChild(imgEl);
-              rowDiv.appendChild(link);
+        const tile = document.createElement('a');
+        tile.className = 'photo-tile';
+        tile._photo = p;
+        tile._index = idx;
+        tile.href = p.src;                       // works without JS; JS intercepts below
+        tile.dataset.ratio = ratio;
+        tile.setAttribute('aria-label', 'View larger: ' + (p.alt || 'photo'));
+        tile.addEventListener('click', function (e) {
+          e.preventDefault();
+          openLightbox(idx, tile);
+        });
+
+        const picture = document.createElement('picture');
+        const webp = document.createElement('source');
+        webp.type = 'image/webp';
+        const img = document.createElement('img');
+        img.alt = p.alt || '';
+        img.loading = 'lazy';
+        img.decoding = 'async';
+        img.width = p.width || 0;
+        img.height = p.height || 0;
+        picture.append(webp, img);
+        tile.appendChild(picture);
+        return tile;
+      }
+
+      function makeGrid(photos) {
+        const grid = document.createElement('div');
+        grid.className = 'photo-grid';
+        // Keep portfolio order in the page, keyboard navigation, and viewer.
+        // layoutGrid() groups adjacent photos once the available width is known.
+        grid._tiles = photos.map(makeTile);
+        return grid;
+      }
+
+      function build() {
+        const sections = data.sections.filter(function (s) { return s.photos && s.photos.length; });
+        if (!sections.length) {
+          placeholder.textContent = 'No photos yet.';
+          return;
+        }
+        const frag = document.createDocumentFragment();
+        if (SHOW_SECTIONS) {
+          sections.forEach(function (section) {
+            const sec = document.createElement('section');
+            sec.className = 'photo-section';
+
+            const h2 = document.createElement('h2');
+            h2.className = 'section-title';
+            h2.textContent = section.title;
+            sec.appendChild(h2);
+
+            const meta = document.createElement('p');
+            meta.className = 'section-meta';
+            meta.textContent = sectionMeta(section.photos);
+            sec.appendChild(meta);
+
+            sec.appendChild(makeGrid(section.photos));
+            frag.appendChild(sec);
+          });
+        } else {
+          // Lead with the strongest work across themes. Dates only settle equal priorities.
+          const allPhotos = sections
+            .reduce(function (acc, s) { return acc.concat(s.photos); }, [])
+            .slice()
+            .sort(function (a, b) {
+              return (a.order ?? 1000) - (b.order ?? 1000)
+                || (a.date || '~').localeCompare(b.date || '~')
+                || a.src.localeCompare(b.src);
             });
-            gallery.appendChild(rowDiv);
-            i += 2;
-          } else {
-            rowDiv.classList.add('is-centered');
-            const idealHeight = 450;
-            const link = document.createElement('a');
-            link.onclick = () => openLightbox(photo1);
-            const imgEl = document.createElement('img');
-            imgEl.src = photo1.src;
-            imgEl.alt = photo1.alt;
-            imgEl.style.height = `${idealHeight}px`;
-            imgEl.style.width = `${photo1.ratio * idealHeight}px`;
-            link.appendChild(imgEl);
-            rowDiv.appendChild(link);
-            gallery.appendChild(rowDiv);
-            i += 1;
-          }
+
+          // Keep the mono header treatment, just the honest datum (no category word).
+          const meta = document.createElement('p');
+          meta.className = 'section-meta stream-meta';
+          meta.textContent = sectionMeta(allPhotos);
+          frag.appendChild(meta);
+
+          frag.appendChild(makeGrid(allPhotos));
         }
-        placeholder.style.display = 'none'; // Hide the placeholder
-        gallery.style.opacity = 1; // Fade in the gallery
+        gallery.appendChild(frag);
       }
 
-      function openLightbox(photo) {
-        const captionParts = [photo.camera, photo.lens, photo.focalLength, photo.shutterSpeed, photo.aperture, photo.iso].filter(Boolean);
-        lightboxCaption.textContent = captionParts.join(' | ');
-        lightboxImg.src = photo.src;
-        lightbox.style.display = 'flex';
+      // Pair adjacent upright photographs. Horizontal compositions stand alone.
+      // A height limit keeps both portrait pairs and landscapes visible as whole images.
+      function layoutGrid(grid) {
+        const tiles = grid._tiles || [];
+        if (!tiles.length) return false;
+        const styles = getComputedStyle(grid);
+        const gap = parseFloat(styles.columnGap || styles.gap) || 14;
+        const W = grid.getBoundingClientRect().width;
+        if (!W) return false;
+        const mobile = W < 600;
+        const rows = [];
+        const focusedTile = grid.contains(document.activeElement) ? document.activeElement : null;
+        for (let i = 0; i < tiles.length;) {
+          const ratio = Number(tiles[i].dataset.ratio) || 1;
+          const nextRatio = tiles[i + 1] ? Number(tiles[i + 1].dataset.ratio) || 1 : null;
+          const pair = !mobile && ratio <= 1.1 && nextRatio && nextRatio <= 1.1;
+          const count = pair ? 2 : 1;
+          const group = tiles.slice(i, i + count);
+          const ratios = group.map(tile => Number(tile.dataset.ratio) || 1);
+          const totalRatio = ratios.reduce((sum, value) => sum + value, 0);
+          const rowWidth = mobile ? W : Math.min(W, 640 * totalRatio + (count - 1) * gap);
+          const row = document.createElement('div');
+          row.className = 'photo-row';
+          row.style.gridTemplateColumns = ratios.map(value => 'minmax(0, ' + (value / totalRatio) + 'fr)').join(' ');
+          row.style.width = rowWidth + 'px';
+          group.forEach(function (tile, j) {
+            row.appendChild(tile);
+            const img = tile.querySelector('img');
+            img.loading = rows.length === 0 && tile._index < 2 ? 'eager' : 'lazy';
+            const displayWidth = (rowWidth - (count - 1) * gap) * ratios[j] / totalRatio;
+            usePhotoSources(img, tile.querySelector('source'), tile._photo, displayWidth, false);
+          });
+          rows.push(row);
+          i += count;
+        }
+        grid.replaceChildren.apply(grid, rows);
+        if (focusedTile) focusedTile.focus({ preventScroll: true });
+        return true;
+      }
+
+      let revealed = false;
+      function reveal() {
+        if (revealed) return;
+        revealed = true;
+        placeholder.style.display = 'none';
+        gallery.style.opacity = 1;
+      }
+
+      // ResizeObserver relayouts on real width changes; covers window resize, font
+      // shifts, and the chaewon-mode card-wrapping (which narrows each grid). Guarded
+      // on width so our own height changes do not loop.
+      function observe() {
+        const grids = gallery.querySelectorAll('.photo-grid');
+        if ('ResizeObserver' in window) {
+          const lastW = new WeakMap();
+          const ro = new ResizeObserver(function (entries) {
+            entries.forEach(function (entry) {
+              const w = Math.round(entry.contentRect.width);
+              if (lastW.get(entry.target) === w) return;
+              lastW.set(entry.target, w);
+              if (layoutGrid(entry.target)) reveal();   // only reveal once a real layout ran
+            });
+          });
+          grids.forEach(function (g) { ro.observe(g); });
+        } else {
+          const relayout = function () {
+            let ok = false;
+            grids.forEach(function (g) { ok = layoutGrid(g) || ok; });
+            if (ok) reveal();
+          };
+          relayout();
+          let t;
+          window.addEventListener('resize', function () {
+            clearTimeout(t); t = setTimeout(relayout, 150);
+          });
+        }
+        // Safety net: if the observer never delivers a non-zero width (exotic load
+        // orderings), still lay everything out and reveal once the page has loaded.
+        window.addEventListener('load', function () {
+          grids.forEach(layoutGrid);
+          reveal();
+        });
+      }
+
+      // ---- Lightbox ----
+      const lightbox = document.getElementById('lightbox');
+      const lbImg = document.getElementById('lb-img');
+      const lbWebp = document.getElementById('lb-webp');
+      const lbOriginal = document.getElementById('lb-original');
+      const lbCaption = document.getElementById('lb-caption');
+      const lbClose = document.getElementById('lb-close');
+      const lbPrev = document.getElementById('lb-prev');
+      const lbNext = document.getElementById('lb-next');
+      let current = -1;
+      let lastTrigger = null;
+
+      // Page regions to make inert (removed from tab order + accessibility tree) while the
+      // modal is open, so background controls behind the overlay can't be reached.
+      const pageRegions = ['header', 'main', 'footer']
+        .map(function (s) { return document.querySelector(s); })
+        .filter(Boolean);
+      function setBackgroundInert(on) {
+        pageRegions.forEach(function (el) {
+          if (on) el.setAttribute('inert', '');
+          else el.removeAttribute('inert');
+        });
+      }
+
+      function renderLightbox() {
+        const p = flat[current];
+        const ratio = p.width / p.height || 1;
+        const maxHeight = Math.max(1, Math.min(innerHeight * 0.76, innerHeight - 170));
+        const displayWidth = Math.min(innerWidth * 0.88, maxHeight * ratio);
+        usePhotoSources(lbImg, lbWebp, p, displayWidth, true);
+        lbOriginal.href = p.src;
+        lbImg.alt = p.alt || '';
+        lbCaption.innerHTML = '';
+        if (p.place) {
+          const pl = document.createElement('div');
+          pl.className = 'lb-place';
+          pl.textContent = p.place;
+          lbCaption.appendChild(pl);
+        }
+        const exif = [p.camera, p.lens, p.focalLength, p.shutterSpeed, p.aperture, p.iso]
+          .filter(Boolean).join(' · ');
+        const ex = document.createElement('div');
+        ex.className = 'lb-exif';
+        ex.textContent = exif;
+        lbCaption.appendChild(ex);
+        // Reflect the current photo in the dialog's accessible name as you navigate.
+        lightbox.setAttribute('aria-label', 'Photo viewer: ' + (p.place || p.alt || 'photo'));
+      }
+      function openLightbox(i, trigger) {
+        current = i;
+        lastTrigger = trigger || null;
+        renderLightbox();
+        lightbox.classList.add('open');
+        lightbox.setAttribute('aria-hidden', 'false');
         document.body.classList.add('lightbox-open');
+        setBackgroundInert(true);
+        lbClose.focus();
       }
-
       function closeLightbox() {
-        lightbox.style.display = 'none';
+        lightbox.classList.remove('open');
+        lightbox.setAttribute('aria-hidden', 'true');
         document.body.classList.remove('lightbox-open');
+        setBackgroundInert(false);
+        if (lastTrigger && typeof lastTrigger.focus === 'function') lastTrigger.focus();
+      }
+      function step(delta) {
+        if (!flat.length) return;
+        current = (current + delta + flat.length) % flat.length;
+        renderLightbox();
       }
 
-      // Initial layout calculation
-      createRuleBasedLayout();
+      lbClose.addEventListener('click', closeLightbox);
+      lbPrev.addEventListener('click', function () { step(-1); });
+      lbNext.addEventListener('click', function () { step(1); });
+      lightbox.addEventListener('click', function (e) {
+        if (e.target === lightbox) closeLightbox();
+      });
+      document.addEventListener('keydown', function (e) {
+        if (!lightbox.classList.contains('open')) return;
+        if (e.key === 'Escape') { closeLightbox(); return; }
+        if (e.key === 'ArrowRight') { step(1); return; }
+        if (e.key === 'ArrowLeft') { step(-1); return; }
+        if (e.key === 'Tab') {
+          // Keep keyboard focus within the viewer, including the original link.
+          const f = [lbClose, lbPrev, lbNext, lbOriginal];
+          const first = f[0], last = f[f.length - 1];
+          if (!f.includes(document.activeElement)) { e.preventDefault(); first.focus(); }
+          else if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+          else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+        }
+      });
 
-      // --- Event Listeners ---
-
-      let lastWidth = window.innerWidth;
-
-      // Recalculate layout on window resize (debounced)
-      let resizeTimeout;
       window.addEventListener('resize', function () {
-        // On mobile, scrolling can trigger a resize event when the address bar
-        // hides/shows. We only want to re-layout if the width has changed.
-        if (window.innerWidth === lastWidth) {
-          return; // Do nothing if only height changed
-        }
-        lastWidth = window.innerWidth;
-
-        clearTimeout(resizeTimeout);
-        gallery.style.opacity = 0; // Hide gallery to prevent flash of unstyled content
-        placeholder.style.display = 'flex'; // Show placeholder again during recalc
-        resizeTimeout = setTimeout(createRuleBasedLayout, 150);
+        if (lightbox.classList.contains('open')) renderLightbox();
       });
 
-      // Close lightbox with the 'X' button
-      closeBtn.onclick = closeLightbox;
-
-      // Close lightbox by clicking on the background
-      lightbox.addEventListener('click', (e) => {
-        if (e.target === lightbox) {
-          closeLightbox();
-        }
-      });
-    });
+      // ---- Go ----
+      build();
+      observe();
+    })();
   </script>
 </body>
 
