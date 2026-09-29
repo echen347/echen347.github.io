@@ -3,6 +3,18 @@
 
 <head>
   <meta charset="UTF-8">
+  <!-- Resolve the page backdrop before stylesheets or WebGL can delay it. -->
+  <script>
+    if (new URL(window.location.href).searchParams.get('view') === 'scene') {
+      document.documentElement.dataset.view = 'scene';
+      document.documentElement.dataset.sceneBoot = 'scene';
+    }
+  </script>
+  <style>
+    html[data-view="scene"], html[data-view="scene"] body { background: #071015; color-scheme: dark; }
+    html[data-scene-boot="scene"] body { color: #e6eff1; }
+    html[data-scene-boot="scene"] :is(h1, h2, h3, h4, a) { color: inherit; }
+  </style>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="X-UA-Compatible" content="ie=edge">
   <title>Ethan Chen - Photography</title>
@@ -247,18 +259,37 @@
       .photo-gallery, .photo-tile::after, .lb-btn { transition: none; }
     }
   </style>
+  <link rel="stylesheet" href="./studies/site-scene.css?v=header-controls-1">
+  <script src="./studies/fluid-prototype.js?v=smooth-sampling-2" defer></script>
+  <script src="./studies/homepage-preview.js?v=first-paint-1" defer></script>
 </head>
 
-<body>
+<body data-scene-page="content" data-view="profile">
+  <section id="scene-layer" aria-label="Luminous fluid scene" aria-hidden="true" inert>
+    <canvas id="fluid-canvas" aria-hidden="true"></canvas>
+    <div class="scene-shade" aria-hidden="true"></div>
+    <p id="scene-help" class="sr-only">Animated background. Choose Paper for the original page style.</p>
+    <p id="scene-status" role="status" hidden></p>
+  </section>
   <header>
     <center>
       <h1>Photography</h1>
-      <nav>
-        <a href="/">Home</a> /
+      <nav aria-label="Main navigation">
+        <a href="profile.html">Home</a> /
         <a href="academic.html">Academic</a> /
         <a href="photography.html">Photography</a>
       </nav>
     </center>
+      <a id="view-toggle" href="?view=scene" hidden>
+      <svg id="book-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 6.5C9 4.2 5.5 4 2.5 5v14c3-1 6.5-.8 9.5 1.5 3-2.3 6.5-2.5 9.5-1.5V5c-3-1-6.5-.8-9.5 1.5Z"/><path d="M12 6.5v14"/>
+      </svg>
+      <svg id="scene-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" hidden>
+        <path d="M2 7c4-5 7 5 11 0s7 0 9 0M2 12c4-5 7 5 11 0s7 0 9 0M2 17c4-5 7 5 11 0s7 0 9 0"/>
+      </svg>
+      <span id="view-label">Scene</span>
+    </a>
+    <p id="profile-status" role="status" hidden></p>
   </header>
   <main>
     <p class="intro">Selected photographs. More on
@@ -269,7 +300,7 @@
       <!-- Sections + grids are built by the script below from window.photoData -->
     </div>
 
-    <p><a href="/">Back to home</a></p>
+    <p><a href="profile.html">Back to home</a></p>
   </main>
 
   <div id="lightbox" class="lightbox" role="dialog" aria-modal="true" aria-label="Photo viewer" aria-hidden="true">
@@ -528,7 +559,7 @@
 
       // Page regions to make inert (removed from tab order + accessibility tree) while the
       // modal is open, so background controls behind the overlay can't be reached.
-      const pageRegions = ['header', 'main', 'footer']
+      const pageRegions = ['header', 'main', 'footer', '#scene-layer', '#scene-controls']
         .map(function (s) { return document.querySelector(s); })
         .filter(Boolean);
       function setBackgroundInert(on) {
@@ -536,6 +567,7 @@
           if (on) el.setAttribute('inert', '');
           else el.removeAttribute('inert');
         });
+        document.dispatchEvent(new CustomEvent('site:modalchange', { detail: { open: on } }));
       }
 
       function renderLightbox() {
@@ -593,7 +625,7 @@
       });
       document.addEventListener('keydown', function (e) {
         if (!lightbox.classList.contains('open')) return;
-        if (e.key === 'Escape') { closeLightbox(); return; }
+        if (e.key === 'Escape') { e.preventDefault(); closeLightbox(); return; }
         if (e.key === 'ArrowRight') { step(1); return; }
         if (e.key === 'ArrowLeft') { step(-1); return; }
         if (e.key === 'Tab') {

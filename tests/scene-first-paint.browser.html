@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scene first-paint checks</title>
+<style>
+  body { margin: 24px; background: #101318; color: #e5edf2; font: 14px/1.6 system-ui; }
+  iframe { display: block; width: 820px; height: 680px; border: 1px solid #46505b; }
+  li[data-pass="false"] { color: #ff9999; }
+  li[data-pass="true"] { color: #93dab3; }
+</style>
+<h1>Scene first-paint checks</h1>
+<p>Run with <code>node tests/scene-first-paint.server.cjs</code>. The server delays the real scene scripts by 1.5 seconds without changing page markup.</p>
+<ol id="results"></ol>
+<p id="summary">Running…</p>
+<div id="fixture"></div>
+<script>
+(async () => {
+  let frame, passed = 0, failed = 0, loads = 0;
+  const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const check = (condition, label) => {
+    const item = document.createElement('li');
+    item.dataset.pass = String(Boolean(condition));
+    item.textContent = `${condition ? 'PASS' : 'FAIL'}: ${label}`;
+    document.querySelector('#results').append(item);
+    condition ? passed++ : failed++;
+  };
+  const until = async (predicate, label, timeout = 12000) => {
+    const started = performance.now();
+    while (!predicate() && performance.now() - started < timeout) await wait(20);
+    if (!predicate()) throw new Error(label);
+  };
+  const doc = () => frame.contentDocument;
+  const win = () => frame.contentWindow;
+  const color = value => {
+    const values = value.match(/[\d.]+/g)?.map(Number) || [];
+    if (values.length < 3) throw new Error('Cannot read computed color: ' + value);
+    return [values[0], values[1], values[2], values[3] ?? 1];
+  };
+  const over = (front, back) => front.slice(0, 3).map((value, index) => value * front[3] + back[index] * (1 - front[3]));
+  const background = () => {
+    const html = color(win().getComputedStyle(doc().documentElement).backgroundColor);
+    const body = color(win().getComputedStyle(doc().body).backgroundColor);
+    return over(body, over(html, [255, 255, 255]));
+  };
+  const isDark = () => Math.max(...background()) < 70;
+  const isLight = () => Math.min(...background()) > 180;
+  const description = () => 'background ' + background().map(value => Math.round(value)).join(', ');
+  const runtimeReady = () => doc().querySelector('#fluid-canvas')?.dataset.state === 'ready';
+  const visible = element => Boolean(element && !element.hidden && win().getComputedStyle(element).display !== 'none');
+  const nav = name => [...doc().querySelectorAll('nav a')].find(link => visible(link) && link.textContent.trim() === name);
+  const mode = async value => {
+    const result = await fetch('/__scene-test-mode?mode=' + value);
+    if (!result.ok) throw new Error('Start the first-paint test server before running this fixture');
+    const config = await result.json();
+    if (config.delay < 1000) throw new Error('The test server must delay scene scripts by at least one second');
+  };
+  const parsed = async (previous = null) => {
+    await until(() => {
+      try { return doc() !== previous && Boolean(doc()?.body?.querySelector('#fluid-canvas')) && Boolean(doc().querySelector('main')) && Boolean(doc().querySelector('h1')); }
+      catch { return false; }
+    }, 'The real page did not parse');
+    // Two rendering opportunities expose the pre-controller theme, not only
+    // the final result after delayed scripts and WebGL initialization finish.
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  };
+  const load = async (url, scripts = true) => {
+    frame?.remove();
+    frame = document.createElement('iframe');
+    frame.title = url;
+    if (!scripts) frame.setAttribute('sandbox', 'allow-same-origin');
+    const destination = new URL(url, location.href);
+    destination.searchParams.set('paintcheck', `${Date.now()}-${++loads}`);
+    frame.src = destination.href;
+    document.querySelector('#fixture').append(frame);
+    await parsed();
+  };
+  const navigate = async link => {
+    if (!link) throw new Error('Navigation link is missing');
+    const previous = doc();
+    link.click();
+    await parsed(previous);
+  };
+  const earlyScene = label => {
+    check(!runtimeReady() && typeof win().FluidPrototype === 'undefined', label + ': sampled before the delayed renderer executes');
+    check(isDark(), label + ': starts dark before the controller (' + description() + ')');
+    const text = color(win().getComputedStyle(doc().querySelector('h1')).color);
+    check(Math.min(...text.slice(0, 3)) > 130, label + ': initial heading remains readable on the dark background');
+  };
+  const runningScene = async label => {
+    await until(runtimeReady, label + ': renderer did not become ready');
+    check(doc().body.dataset.view === 'scene' && isDark(), label + ': stays dark after scene initialization');
+  };
+  const paper = async label => {
+    await until(() => doc().readyState === 'complete', label + ': document did not finish');
+    check(isLight() && doc().body.dataset.view !== 'scene', label + ': retains its light paper background');
+    check(visible(doc().querySelector('main')), label + ': keeps the page content readable');
+  };
+  const group = async (label, run) => {
+    try { await run(); }
+    catch (error) { check(false, label + ': ' + error.message); }
+    finally { frame?.remove(); frame = null; }
+  };
+  const entries = [
+    { name: 'Homepage', scene: '../?seed=137#scene', paper: '../#profile' },
+    ...['profile', 'academic', 'photography', 'writing'].map(name => ({
+      name, scene: '../' + name + '.html?view=scene&seed=137', paper: '../' + name + '.html'
+    }))
+  ];
+
+  try { await mode('delay'); }
+  catch (error) {
+    check(false, error.message);
+    document.querySelector('#summary').textContent = 'Fixture server required';
+    document.body.dataset.result = 'failed';
+    return;
+  }
+  for (const entry of entries) {
+    await group(entry.name + ' first paint', async () => {
+      await load(entry.scene);
+      earlyScene(entry.name);
+      await runningScene(entry.name);
+      await load(entry.paper);
+      check(!runtimeReady() && isLight(), entry.name + ': Paper starts light before scene scripts (' + description() + ')');
+      await paper(entry.name + ' Paper');
+    });
+  }
+  await group('Scene navigation', async () => {
+    await load('../?seed=821#scene');
+    await runningScene('Navigation entrance');
+    await navigate(nav('Profile'));
+    earlyScene('Entrance to Profile');
+    await runningScene('Profile destination');
+    await navigate(nav('Academic'));
+    earlyScene('Profile to Academic');
+    await runningScene('Academic destination');
+    await navigate(nav('Home'));
+    earlyScene('Academic to Profile');
+    await runningScene('Profile return');
+    await navigate(nav('Back to scene'));
+    earlyScene('Profile to entrance');
+    await runningScene('Entrance return');
+  });
+  for (const entry of entries) {
+    await group(entry.name + ' without JavaScript', async () => {
+      await load(entry.scene, false);
+      await paper(entry.name + ' no-JavaScript fallback');
+      check(typeof win().FluidPrototype === 'undefined', entry.name + ': the fallback runs without page JavaScript');
+    });
+  }
+  await mode('missing');
+  for (const entry of entries) {
+    await group(entry.name + ' renderer failure', async () => {
+      await load(entry.scene);
+      earlyScene(entry.name + ' unavailable renderer');
+      await until(() => visible(doc().querySelector('#profile-status')) && doc().querySelector('#profile-status').textContent.includes('unavailable'),
+        entry.name + ': renderer failure did not expose the fallback');
+      await paper(entry.name + ' renderer failure');
+      check(doc().querySelector('#view-toggle').hidden, entry.name + ': renderer failure hides the unavailable scene switch');
+    });
+  }
+  await mode('delay');
+  document.querySelector('#summary').textContent = `${passed} passed, ${failed} failed`;
+  document.body.dataset.result = failed ? 'failed' : 'passed';
+})();
+</script>
+</html>

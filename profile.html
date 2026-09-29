@@ -1,10 +1,11 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
+
 <head>
-  <meta charset="utf-8">
+  <meta charset="UTF-8">
   <!-- Resolve the page backdrop before stylesheets or WebGL can delay it. -->
   <script>
-    if (!window.location.hash || window.location.hash === '#scene') {
+    if (new URL(window.location.href).searchParams.get('view') === 'scene') {
       document.documentElement.dataset.view = 'scene';
       document.documentElement.dataset.sceneBoot = 'scene';
     }
@@ -14,59 +15,63 @@
     html[data-scene-boot="scene"] body { color: #e6eff1; }
     html[data-scene-boot="scene"] :is(h1, h2, h3, h4, a) { color: inherit; }
   </style>
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#071015">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="X-UA-Compatible" content="ie=edge">
-  <title>Ethan Chen</title>
-  <meta property="og:title" content="Ethan Chen">
-  <meta property="og:description" content="Personal website and interactive portfolio.">
-  <meta property="og:image" content="https://echen347.github.io/profile_pic.JPG">
-  <meta property="og:url" content="https://echen347.github.io/">
-  <meta property="og:type" content="website">
+  <title>Ethan Chen - Profile</title>
   <link rel="stylesheet" href="https://latex.vercel.app/style.css">
   <link rel="stylesheet" href="/chaewon/chaewon.css">
   <link rel="icon" href="./favicon.ico" type="image/x-icon">
   <script src="/chaewon/chaewon.js" defer></script>
-  <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
-  <link rel="stylesheet" href="./studies/homepage-preview.css?v=header-controls-1">
+  <style>
+    body {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    main {
+      flex: 1;
+    }
+
+    footer {
+      border-top: 1px solid #ddd;
+      padding-top: 1.5rem;
+      margin-top: 3rem;
+      color: #777;
+    }
+  </style>
+  <link rel="stylesheet" href="./studies/site-scene.css?v=header-controls-1">
   <script src="./studies/fluid-prototype.js?v=smooth-sampling-2" defer></script>
   <script src="./studies/homepage-preview.js?v=first-paint-1" defer></script>
 </head>
-<body data-view="profile">
-  <section id="scene-layer" aria-label="Luminous fluid scene" aria-hidden="true" inert>
-    <canvas id="fluid-canvas" tabindex="0" aria-label="Interactive luminous fluid" aria-describedby="scene-help"></canvas>
-    <div class="scene-shade" aria-hidden="true"></div>
-    <p id="scene-help" class="sr-only">Move your pointer or drag to stir the fluid. Use the arrow keys while the canvas is focused to stir, or Space to pause. Choose Paper to read.</p>
-    <p id="scene-status" role="status" hidden></p>
-    <div class="scene-footer">
-      <span>Move to stir.</span>
-      <div class="scene-actions">
-        <button id="scene-reset" type="button" aria-label="Reset scene">Reset</button>
-        <button id="scene-pause" type="button" aria-label="Pause animation">Pause</button>
-      </div>
-    </div>
-  </section>
 
-  <header id="site-header">
-    <h1>Ethan Chen</h1>
-    <nav aria-label="Main navigation">
-        <a href="profile.html">Profile</a> /
+<body data-scene-page="content" data-view="profile">
+  <section id="scene-layer" aria-label="Luminous fluid scene" aria-hidden="true" inert>
+    <canvas id="fluid-canvas" aria-hidden="true"></canvas>
+    <div class="scene-shade" aria-hidden="true"></div>
+    <p id="scene-help" class="sr-only">Animated background. Choose Paper for the original page style.</p>
+    <p id="scene-status" role="status" hidden></p>
+  </section>
+  <header>
+    <center>
+      <h1>Ethan Chen</h1>
+      <nav aria-label="Main navigation">
+        <a id="paper-home" href="profile.html">Profile</a><a id="scene-home" href="/#scene" hidden>Back to scene</a> /
         <a href="academic.html">Academic</a> /
         <a href="photography.html">Photography</a>
       </nav>
-    <a id="view-toggle" href="#profile" hidden>
+    </center>
+    <a id="view-toggle" href="?view=scene" hidden>
       <svg id="book-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
         <path d="M12 6.5C9 4.2 5.5 4 2.5 5v14c3-1 6.5-.8 9.5 1.5 3-2.3 6.5-2.5 9.5-1.5V5c-3-1-6.5-.8-9.5 1.5Z"/><path d="M12 6.5v14"/>
       </svg>
       <svg id="scene-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" hidden>
         <path d="M2 7c4-5 7 5 11 0s7 0 9 0M2 12c4-5 7 5 11 0s7 0 9 0M2 17c4-5 7 5 11 0s7 0 9 0"/>
       </svg>
-      <span id="view-label">Paper</span>
+      <span id="view-label">Scene</span>
     </a>
-  </header>
-
-  <div id="profile-panel">
     <p id="profile-status" role="status" hidden></p>
+  </header>
   <main>
     <div class="bio-flex">
       <img src="headshot-cur-cruise.JPG" alt="Ethan Chen headshot">
@@ -123,10 +128,11 @@
       </p>
     </section>
   </main>
+
   <footer>
     <p>&copy; 2026 Ethan Chen. All rights reserved. Last updated: 9/30/2026</p>
     <p>Powered by <a href="https://latex.vercel.app/" target="_blank">LaTeX.css</a></p>
   </footer>
-  </div>
 </body>
+
 </html>

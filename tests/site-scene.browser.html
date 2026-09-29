@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Site scene checks</title>
+<style>
+  body { margin: 0; padding: 24px; background: #101318; color: #e5edf2; font: 14px/1.6 system-ui; }
+  iframe { display: block; width: 820px; height: 680px; border: 1px solid #46505b; }
+  li[data-pass="false"] { color: #ff9999; }
+  li[data-pass="true"] { color: #93dab3; }
+</style>
+<h1>Site scene checks</h1>
+<ol id="results"></ol>
+<p id="summary">Running…</p>
+<div id="fixtures"></div>
+<script>
+(async () => {
+  let passed = 0, failed = 0, loads = 0, frame;
+  const wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+  const check = (condition, label) => {
+    const item = document.createElement('li');
+    item.dataset.pass = String(Boolean(condition));
+    item.textContent = `${condition ? 'PASS' : 'FAIL'}: ${label}`;
+    document.querySelector('#results').append(item);
+    condition ? passed++ : failed++;
+  };
+  const until = async (predicate, label, timeout = 6000) => {
+    const started = performance.now();
+    while (!predicate() && performance.now() - started < timeout) await wait(50);
+    if (!predicate()) throw new Error(label);
+  };
+  const load = (url, width = 820, scripts = true) => new Promise((resolve, reject) => {
+    frame?.remove();
+    frame = document.createElement('iframe');
+    frame.title = `${url} at ${width} pixels`;
+    frame.style.width = `${width}px`;
+    if (!scripts) frame.setAttribute('sandbox', 'allow-same-origin');
+    const timer = setTimeout(() => reject(new Error(`${url} did not load`)), 15000);
+    frame.onload = () => { clearTimeout(timer); resolve(frame); };
+    const destination = new URL(url, window.location.href);
+    destination.searchParams.set('check', `${Date.now()}-${++loads}`);
+    frame.src = destination.href;
+    document.querySelector('#fixtures').append(frame);
+  });
+  const navigate = link => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Navigation did not finish')), 15000);
+    frame.onload = () => { clearTimeout(timer); resolve(); };
+    link.click();
+  });
+  const group = async (name, run) => {
+    try { await run(); }
+    catch (error) { check(false, `${name}: ${error.message}`); }
+    finally { frame?.remove(); frame = null; }
+  };
+  const frames = canvas => Number(canvas?.dataset.frames || 0);
+  const interactions = canvas => Number(canvas?.dataset.interactions || 0);
+  const page = () => frame.contentDocument;
+  const win = () => frame.contentWindow;
+  const url = () => new URL(win().location.href);
+  const ready = async () => {
+    try {
+      await until(() => page().querySelector('#fluid-canvas')?.dataset.state === 'ready', 'Fluid renderer did not become ready');
+    } catch (error) {
+      const doc = page(), canvas = doc.querySelector('#fluid-canvas');
+      const diagnostic = {
+        url: win().location.href,
+        readyState: doc.readyState,
+        title: doc.title,
+        bodyText: doc.body?.innerText.slice(0, 400),
+        documentStart: doc.documentElement?.outerHTML.slice(0, 200),
+        view: doc.body?.dataset.view,
+        pageType: doc.body?.dataset.scenePage,
+        canvas: canvas ? { ...canvas.dataset, width: canvas.width, height: canvas.height } : null,
+        renderer: typeof win().FluidPrototype?.create,
+        viewport: [win().innerWidth, win().innerHeight],
+        profileStatus: doc.querySelector('#profile-status')?.textContent.trim(),
+        sceneStatus: doc.querySelector('#scene-status')?.textContent.trim()
+      };
+      throw new Error(`${error.message}: ${JSON.stringify(diagnostic)}`);
+    }
+  };
+  const visible = element => Boolean(element && !element.hidden && !element.closest('[inert]') && win().getComputedStyle(element).display !== 'none');
+  const overflow = () => page().documentElement.scrollWidth > page().documentElement.clientWidth + 1;
+  const hitTarget = element => {
+    if (!element) return false;
+    const bounds = element.getBoundingClientRect();
+    const hit = page().elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2);
+    return Boolean(hit && (hit === element || element.contains(hit)));
+  };
+  const scrollsWithPage = async (elements, label) => {
+    win().scrollTo({ top: 0, behavior: 'instant' });
+    await wait(70);
+    const initialTops = elements.map(element => element.getBoundingClientRect().top);
+    win().scrollTo({ top: 350, behavior: 'instant' });
+    await wait(70);
+    const distance = win().scrollY;
+    check(distance > 0, `${label}: the document scrolls for the position check`);
+    elements.forEach((element, index) => {
+      const delta = element.getBoundingClientRect().top - initialTops[index];
+      check(distance > 0 && Math.abs(delta + distance) <= 1,
+        `${label}: ${element.textContent.trim()} scrolls with the document (moved ${delta.toFixed(1)}, scroll ${distance.toFixed(1)})`);
+    });
+    win().scrollTo({ top: 0, behavior: 'instant' });
+    await wait(70);
+    elements.forEach(element => check(hitTarget(element), `${label}: ${element.textContent.trim()} receives pointer input at the page top`));
+  };
+  const nav = name => [...page().querySelectorAll('nav a')].find(link => visible(link) && link.textContent.trim() === name);
+  const navigationNames = () => [...page().querySelectorAll('nav a')].filter(visible).map(link => link.textContent.trim());
+  const writingLink = () => [...page().querySelectorAll('main a[href]')].find(link => new URL(link.href).pathname.endsWith('/writing.html'));
+  const bodyText = (name, main) => {
+    if (name === 'photography') return main.querySelector('.intro').textContent.replace(/\s+/g, ' ').trim();
+    const copy = main.cloneNode(true);
+    if (name === 'writing') copy.querySelectorAll('.substack-post-embed').forEach(embed => embed.remove());
+    return copy.textContent.replace(/\s+/g, ' ').trim();
+  };
+  const pixels = canvas => {
+    const gl = canvas.getContext('webgl2');
+    if (!gl || gl.isContextLost()) throw new Error('Canvas has no live WebGL context');
+    const output = new Uint8Array(canvas.width * canvas.height * 4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, output);
+    if (gl.getError() !== gl.NO_ERROR) throw new Error('Cannot read the displayed scene');
+    return output;
+  };
+  const equal = (left, right) => left.length === right.length && left.every((value, index) => value === right[index]);
+  const pointer = (canvas, type, x, y, pointerType = 'mouse', pointerId = 1) => {
+    const bounds = canvas.getBoundingClientRect();
+    canvas.dispatchEvent(new (win().PointerEvent)(type, {
+      bubbles: true, cancelable: true, pointerId, pointerType,
+      clientX: bounds.left + bounds.width * x, clientY: bounds.top + bounds.height * y,
+      buttons: type === 'pointerup' ? 0 : 1
+    }));
+  };
+
+  // These checks catch losing the current appearance when a real link navigates.
+  await group('Cross-page navigation', async () => {
+    await load('../#scene');
+    await ready();
+    const seed = url().searchParams.get('seed');
+    check(/^\d+$/.test(seed || ''), 'Scene URLs include a reusable random seed');
+    check(JSON.stringify(navigationNames()) === JSON.stringify(['Profile', 'Academic', 'Photography']),
+      'Homepage navigation contains Profile, Academic, and Photography only');
+    check(page().querySelector('#view-label').textContent.trim() === 'Paper' && page().querySelector('#view-toggle').getAttribute('aria-label') === 'Show paper',
+      'The homepage book control names Paper');
+    const entranceToggle = page().querySelector('#view-toggle');
+    check(entranceToggle.getBoundingClientRect().top >= 0 && entranceToggle.getBoundingClientRect().top < 120 && hitTarget(entranceToggle),
+      'The fluid-only entrance keeps Paper clickable at the page top');
+    for (const name of ['Profile', 'Academic', 'Photography']) {
+      const destination = new URL(nav(name).href);
+      check(destination.searchParams.get('view') === 'scene' && destination.searchParams.get('seed') === seed,
+        `${name} inherits Scene and its seed from the homepage`);
+    }
+    await navigate(nav('Profile'));
+    await ready();
+    check(url().pathname.endsWith('/profile.html') && page().body.dataset.view === 'scene' && visible(page().querySelector('main .bio-copy')),
+      'Clicking Profile from Scene opens the biography over the fluid');
+    const backToScene = page().querySelector('#scene-home');
+    check(visible(backToScene) && Boolean(backToScene.closest('nav')) && new URL(backToScene.href).pathname === '/' && new URL(backToScene.href).hash === '#scene',
+      'The scene profile offers Back to scene in its navigation');
+    check(JSON.stringify(navigationNames()) === JSON.stringify(['Back to scene', 'Academic', 'Photography']),
+      'Scene profile navigation replaces Profile with Back to scene');
+    if (!backToScene) throw new Error('Back to scene link is missing');
+    await navigate(backToScene);
+    await ready();
+    check(url().pathname === '/' && page().body.dataset.view === 'scene' && page().querySelector('#profile-panel').hidden && url().searchParams.get('seed') === seed,
+      'Back to scene returns to fluid-only with the same palette');
+    await navigate(nav('Profile'));
+    await ready();
+    const sceneWriting = writingLink();
+    check(Boolean(sceneWriting) && new URL(sceneWriting.href).searchParams.get('view') === 'scene' && new URL(sceneWriting.href).searchParams.get('seed') === seed,
+      'The biography Writing link inherits Scene and its seed');
+    if (!sceneWriting) throw new Error('The biography Writing link is missing');
+    // The biography opens Writing in a new tab. Load its real destination in the
+    // test frame without leaving extra tabs behind or changing its target.
+    await load(sceneWriting.href);
+    await ready();
+    check(url().pathname.endsWith('/writing.html') && page().body.dataset.view === 'scene' && url().searchParams.get('seed') === seed,
+      'The biography Writing destination opens with the same scene palette');
+    await navigate(nav('Academic'));
+    await ready();
+    check(page().body.dataset.view === 'scene' && url().searchParams.get('seed') === seed,
+      'Clicking Academic opens the same scene palette behind the content');
+    const sceneHome = new URL(nav('Home').href);
+    check(sceneHome.pathname.endsWith('/profile.html') && sceneHome.searchParams.get('view') === 'scene' && sceneHome.searchParams.get('seed') === seed,
+      'Academic Home points to the biography with its scene style and seed');
+    await navigate(nav('Home'));
+    await ready();
+    check(url().pathname.endsWith('/profile.html') && visible(page().querySelector('main .bio-copy')) && page().body.dataset.view === 'scene' && url().searchParams.get('seed') === seed,
+      'Clicking Academic Home returns to profile text over the same fluid');
+    await navigate(nav('Photography'));
+    await ready();
+    check(page().body.dataset.view === 'scene' && url().searchParams.get('seed') === seed,
+      'Navigating between sections preserves the scene seed');
+    await load('../#profile', 390);
+    await scrollsWithPage([page().querySelector('#view-toggle')], 'Homepage Paper');
+    for (const name of ['Profile', 'Academic', 'Photography']) {
+      const destination = new URL(nav(name).href);
+      check(!destination.searchParams.has('view') && !destination.searchParams.has('seed'),
+        `${name} keeps its original paper link from the profile`);
+    }
+    await navigate(nav('Profile'));
+    check(page().body.dataset.view !== 'scene' && visible(page().querySelector('main .bio-copy')),
+      'Clicking Profile from Paper keeps the biography on paper');
+    check(!visible(page().querySelector('#scene-home')), 'The paper profile hides Back to scene');
+    const paperWriting = writingLink();
+    check(Boolean(paperWriting) && !new URL(paperWriting.href).searchParams.has('view') && !new URL(paperWriting.href).searchParams.has('seed'),
+      'The paper biography keeps Writing in its original paper style');
+    await navigate(nav('Academic'));
+    check(page().body.dataset.view !== 'scene' && visible(page().querySelector('main')),
+      'Clicking Academic from the profile opens the paper original');
+    const profileDestination = new URL(nav('Home').href);
+    check(profileDestination.pathname.endsWith('/profile.html') && !profileDestination.searchParams.has('view') && !profileDestination.searchParams.has('seed'),
+      'Paper navigation returns to the paper profile');
+    await navigate(nav('Home'));
+    check(url().pathname.endsWith('/profile.html') && visible(page().querySelector('main .bio-copy')) && page().body.dataset.view !== 'scene',
+      'Clicking Academic Home from Paper returns to profile text on paper');
+  });
+
+  // Each page must remain readable, including its narrow layout and plain URL.
+  for (const name of ['profile', 'academic', 'photography', 'writing']) {
+    await group(`${name} view switching`, async () => {
+      const response = await fetch(`../${name}.html`, { cache: 'no-store' });
+      if (!response.ok) throw new Error('Cannot read the original page');
+      const baseline = new DOMParser().parseFromString(await response.text(), 'text/html');
+      const baselineText = bodyText(name, baseline.querySelector('main'));
+      await load(`../${name}.html?view=scene&seed=812736`, 390);
+      await ready();
+      const canvas = page().querySelector('#fluid-canvas');
+      const main = page().querySelector('main');
+      const expectedNavigation = name === 'profile' ? ['Back to scene', 'Academic', 'Photography'] : ['Home', 'Academic', 'Photography'];
+      check(JSON.stringify(navigationNames()) === JSON.stringify(expectedNavigation),
+        `${name}: navigation contains ${expectedNavigation.join(', ')} only`);
+      check(page().body.dataset.view === 'scene' && visible(main), `${name}: Scene keeps the page content visible and interactive`);
+      check(!overflow(), `${name}: the narrow Scene fits without horizontal overflow`);
+      check(/paper/i.test(page().querySelector('#view-toggle').textContent), `${name}: the book switch names Paper`);
+      check(!page().querySelector('#scene-pause, #scene-reset'), `${name}: the content page has no Pause or Reset controls`);
+      check(!page().body.innerText.includes('Move to stir.'), `${name}: the content page does not invite cursor stirring`);
+      check(canvas.tabIndex < 0 && canvas.getAttribute('aria-hidden') === 'true',
+        `${name}: the background canvas is decorative and outside keyboard navigation`);
+      const backgroundInteractions = interactions(canvas), backgroundFrames = frames(canvas);
+      pointer(canvas, 'pointerdown', 0.12, 0.18, 'mouse', 127);
+      pointer(canvas, 'pointermove', 0.4, 0.5, 'mouse', 127);
+      pointer(canvas, 'pointermove', 0.8, 0.35, 'mouse', 127);
+      pointer(canvas, 'pointerup', 0.8, 0.35, 'mouse', 127);
+      pointer(canvas, 'pointerdown', 0.2, 0.3, 'touch', 128);
+      pointer(canvas, 'pointermove', 0.65, 0.7, 'touch', 128);
+      pointer(canvas, 'pointerup', 0.65, 0.7, 'touch', 128);
+      canvas.dispatchEvent(new (win().KeyboardEvent)('keydown', { key: 'ArrowRight', code: 'ArrowRight', bubbles: true, cancelable: true }));
+      for (const x of [0.15, 0.75]) {
+        page().dispatchEvent(new (win().PointerEvent)('pointermove', {
+          pointerId: 129, pointerType: 'mouse', clientX: win().innerWidth * x, clientY: win().innerHeight * 0.6,
+          bubbles: true, cancelable: true
+        }));
+      }
+      const backgroundReducedMotion = win().matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (backgroundReducedMotion) {
+        await wait(150);
+        check(canvas.dataset.paused === 'true' && frames(canvas) === backgroundFrames,
+          `${name}: the decorative background respects reduced motion`);
+      } else {
+        await until(() => frames(canvas) > backgroundFrames, `${name}: the decorative background stopped animating`);
+        check(canvas.dataset.paused === 'false', `${name}: the decorative background keeps flowing without cursor input`);
+      }
+      check(interactions(canvas) === backgroundInteractions,
+        `${name}: canvas mouse, touch, arrows, and document movement cannot stir the background`);
+      const sceneHeaderLinks = [page().querySelector('#view-toggle')];
+      if (name === 'profile') sceneHeaderLinks.push(page().querySelector('#scene-home'));
+      await scrollsWithPage(sceneHeaderLinks, `${name} Scene`);
+      page().querySelector('#view-toggle').click();
+      await wait(450);
+      check(page().body.dataset.view !== 'scene' && visible(main) && !url().searchParams.has('view') && !url().searchParams.has('seed'),
+        `${name}: Paper removes the scene parameters without changing the page`);
+      const count = frames(canvas);
+      await wait(150);
+      check(canvas.dataset.paused === 'true' && frames(canvas) === count, `${name}: Paper stops all scene frames`);
+      check(!overflow(), `${name}: the narrow paper page fits without horizontal overflow`);
+      await scrollsWithPage([page().querySelector('#view-toggle')], `${name} Paper`);
+      if (name === 'profile') {
+        check(JSON.stringify(navigationNames()) === JSON.stringify(['Profile', 'Academic', 'Photography']) && !visible(page().querySelector('#scene-home')),
+          'Paper profile navigation restores Profile and hides Back to scene');
+      }
+      // Gallery captions and the Substack embed populate after load. Their host
+      // page copy remains stable while third-party rendering can replace markup.
+      check(bodyText(name, main) === baselineText, `${name}: switching preserves the original body copy`);
+      if (name === 'writing') {
+        const embed = main.querySelector('.substack-post-embed');
+        const expectedPost = baseline.querySelector('.substack-post-embed [data-post-link]').getAttribute('href');
+        const post = embed?.querySelector('[data-post-link]');
+        const embeddedFrame = embed?.matches('iframe[src]') ? embed : embed?.querySelector('iframe[src]');
+        const validFrame = embeddedFrame && /(^|\.)substack\.com$/.test(new URL(embeddedFrame.src).hostname);
+        check(Boolean(embed) && ((post && post.getAttribute('href') === expectedPost) || validFrame),
+          'Writing retains its featured Substack post as a link or loaded embed');
+        check([...main.querySelectorAll('a[href]')].some(link => link.getAttribute('href') === 'https://echen0729.substack.com/'),
+          'Writing retains its direct Substack publication link');
+      }
+      page().querySelector('#view-toggle').click();
+      await wait(100);
+      check(page().querySelector('#fluid-canvas') === canvas && url().searchParams.get('seed') === '812736',
+        `${name}: returning to Scene reuses its canvas and palette`);
+      await load(`../${name}.html`, 390);
+      check(page().body.dataset.view !== 'scene' && visible(page().querySelector('main')),
+        `${name}: a direct unmarked URL retains the paper original`);
+      check(!page().querySelector('#scene-pause, #scene-reset'), `${name}: a direct paper visit has no Pause or Reset controls`);
+      check(page().querySelector('#fluid-canvas')?.dataset.state !== 'ready', `${name}: a direct paper visit does not initialize WebGL`);
+    });
+  }
+
+  // Pixel equality catches brush injections even when the animation counter stops.
+  await group('Full pause and Reset', async () => {
+    await load('../?seed=416238#scene');
+    await ready();
+    const canvas = page().querySelector('#fluid-canvas');
+    const pause = page().querySelector('#scene-pause');
+    const reset = page().querySelector('#scene-reset');
+    const reducedMotion = win().matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (canvas.dataset.paused !== 'true') pause.click();
+    await wait(70);
+    const frozen = pixels(canvas), frozenFrames = frames(canvas), frozenInteractions = interactions(canvas);
+    pointer(canvas, 'pointermove', 0.14, 0.18);
+    pointer(canvas, 'pointermove', 0.55, 0.75);
+    pointer(canvas, 'pointermove', 0.92, 0.35);
+    pointer(canvas, 'pointerdown', 0.2, 0.3, 'touch', 2);
+    pointer(canvas, 'pointermove', 0.7, 0.65, 'touch', 2);
+    pointer(canvas, 'pointerup', 0.7, 0.65, 'touch', 2);
+    canvas.dispatchEvent(new (win().KeyboardEvent)('keydown', { key: 'ArrowRight', code: 'ArrowRight', bubbles: true, cancelable: true }));
+    await wait(180);
+    check(equal(frozen, pixels(canvas)), 'Paused mouse, touch, and arrow input leave every displayed pixel unchanged');
+    check(frames(canvas) === frozenFrames && interactions(canvas) === frozenInteractions,
+      'Pause stops both simulation frames and new brush interactions');
+    check(Boolean(reset), 'Scene exposes a Reset control beside Pause');
+    if (!reset) throw new Error('Reset control is missing');
+    const seed = url().searchParams.get('seed');
+    reset.click();
+    await wait(120);
+    const resetSeed = url().searchParams.get('seed');
+    check(resetSeed !== seed && /^\d+$/.test(resetSeed || ''), 'Reset generates a fresh seed in the current URL');
+    check(!equal(frozen, pixels(canvas)), 'Reset visibly changes the colors and initial waves');
+    check(canvas === page().querySelector('#fluid-canvas') && canvas.dataset.paused === 'true' && page().body.dataset.view === 'scene',
+      'Reset keeps the same canvas, page, view, and paused state');
+    const resetPixels = pixels(canvas);
+    await wait(120);
+    check(equal(resetPixels, pixels(canvas)), 'A reset paused scene remains frozen');
+    for (const name of ['Profile', 'Academic', 'Photography']) {
+      check(new URL(nav(name).href).searchParams.get('seed') === resetSeed, `${name} receives the reset palette`);
+    }
+    if (!reducedMotion) {
+      pause.click();
+      const beforeInput = interactions(canvas), beforeFrames = frames(canvas);
+      pointer(canvas, 'pointermove', 0.1, 0.55);
+      check(interactions(canvas) === beforeInput, 'Play starts a new stroke instead of connecting to a stale paused cursor');
+      pointer(canvas, 'pointermove', 0.4, 0.55);
+      await until(() => frames(canvas) > beforeFrames, 'Play did not resume simulation');
+      check(interactions(canvas) > beforeInput, 'A fresh cursor stroke draws again after Play');
+    } else {
+      check(pause.disabled && canvas.dataset.paused === 'true', 'Reduced motion keeps playback disabled after Reset');
+    }
+  });
+
+  // Escape in a photo dialog must not also activate the page-level view shortcut.
+  await group('Gallery viewer', async () => {
+    await load('../photography.html?view=scene&seed=712863');
+    await ready();
+    await until(() => page().querySelector('.photo-tile'), 'Gallery tiles did not appear');
+    const canvas = page().querySelector('#fluid-canvas');
+    page().querySelector('.photo-tile').click();
+    await until(() => page().querySelector('#lightbox').classList.contains('open'), 'Photo viewer did not open');
+    await wait(100);
+    const count = frames(canvas);
+    await wait(150);
+    check(canvas.dataset.paused === 'true' && frames(canvas) === count, 'The photo viewer pauses its background scene');
+    const viewToggle = page().getElementById('view-toggle');
+    check(Boolean(viewToggle?.closest('[inert]')),
+      'The photo viewer makes the background Paper switch inert');
+    page().dispatchEvent(new (win().KeyboardEvent)('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    await wait(100);
+    check(!page().querySelector('#lightbox').classList.contains('open') && page().body.dataset.view === 'scene' && url().searchParams.get('view') === 'scene',
+      'Escape closes the viewer without switching the page to Paper');
+    check(Boolean(viewToggle) && !viewToggle.closest('[inert]'), 'Closing the viewer restores the Paper switch');
+  });
+
+  document.querySelector('#summary').textContent = `${passed} passed, ${failed} failed`;
+  document.body.dataset.result = failed ? 'failed' : 'passed';
+})();
+</script>
+</html>
