@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fluid seed and pause checks</title>
+<style>
+  body { margin: 24px; background: #071015; color: #e6eff1; font: 15px/1.6 system-ui; }
+  canvas { width: 640px; height: 360px; max-width: 100%; }
+  [data-pass="false"] { color: #ff9b91; }
+</style>
+<h1>Fluid seed and pause checks</h1>
+<p id="status" role="status">Preparing graphics…</p>
+<ol id="checks"></ol>
+<canvas aria-label="Seeded fluid test"></canvas>
+<script src="../studies/fluid-prototype.js"></script>
+<script>
+(() => {
+  const canvas = document.querySelector('canvas');
+  const status = document.getElementById('status');
+  let scene, failures = 0;
+  function check(pass, label) {
+    const item = document.createElement('li');
+    item.dataset.pass = String(pass);
+    item.textContent = (pass ? 'PASS · ' : 'FAIL · ') + label;
+    document.getElementById('checks').append(item);
+    if (!pass) failures++;
+  }
+  function pixels() {
+    const gl = canvas.getContext('webgl2');
+    const value = new Uint8Array(canvas.width * canvas.height * 4);
+    gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, value);
+    if (gl.getError() !== gl.NO_ERROR) throw new Error('WebGL readback failed');
+    return value;
+  }
+  function changed(a, b) {
+    let count = 0;
+    for (let i = 0; i < a.length; i += 4)
+      if (Math.max(Math.abs(a[i] - b[i]), Math.abs(a[i + 1] - b[i + 1]), Math.abs(a[i + 2] - b[i + 2])) > 0) count++;
+    return count / (a.length / 4);
+  }
+  function stroke(type = 'mouse', id = 1) {
+    const box = canvas.getBoundingClientRect();
+    canvas.dispatchEvent(new PointerEvent('pointerdown', { pointerType: type, pointerId: id,
+      clientX: box.left + box.width * .2, clientY: box.top + box.height * .3 }));
+    for (const x of [.3, .5, .7]) canvas.dispatchEvent(new PointerEvent('pointermove', {
+      pointerType: type, pointerId: id, clientX: box.left + box.width * x, clientY: box.top + box.height * .6
+    }));
+  }
+  try {
+    scene = FluidPrototype.create(canvas, { randomized: true, seed: 101, paused: true });
+    const initial = pixels();
+    check(canvas.dataset.state === 'ready' && canvas.dataset.seed === '101', 'Randomized shader compiles and records the seed');
+    scene.render();
+    check(changed(initial, pixels()) === 0, 'Repeated paused renders match exactly');
+    stroke(); stroke('touch', 2); stroke('pen', 3);
+    canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }));
+    check(canvas.dataset.interactions === '0' && changed(initial, pixels()) === 0,
+      'Mouse, touch, pen, and arrows leave the paused image unchanged');
+    scene.reset(90210);
+    check(changed(initial, pixels()) > .1, 'A new seed changes the rendered composition');
+    check(canvas.dataset.paused === 'true', 'Reset keeps the scene paused');
+    scene.reset(101);
+    check(changed(initial, pixels()) === 0, 'Resetting to the original seed restores identical pixels');
+    canvas.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space' }));
+    check(canvas.dataset.paused === 'false', 'Space resumes the scene');
+    stroke();
+    scene.setPaused(true);
+    scene.render();
+    check(Number(canvas.dataset.interactions) > 0 && changed(initial, pixels()) > .01,
+      'Resumed cursor input paints visible light');
+    scene.reset(101);
+    check(canvas.dataset.interactions === '0' && changed(initial, pixels()) === 0,
+      'Reset removes all input history and restores the seeded scene');
+    status.textContent = failures ? 'FAIL · ' + failures + ' checks failed' : 'PASS · All checks passed';
+    document.body.dataset.result = failures ? 'fail' : 'pass';
+  } catch (error) {
+    status.textContent = 'ERROR · ' + error.message;
+    document.body.dataset.result = 'error';
+  } finally {
+    scene?.dispose();
+  }
+})();
+</script>
+</html>

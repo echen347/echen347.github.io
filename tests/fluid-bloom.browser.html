@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Fluid wide-bloom checks</title>
+<style>
+  body { background: #101318; color: #dcecef; font: 14px/1.6 system-ui; padding: 24px; }
+  pre { white-space: pre-wrap; }
+  canvas { width: 320px; height: 320px; image-rendering: pixelated; border: 1px solid #40505d; }
+</style>
+<h1>Fluid wide-bloom checks</h1>
+<p>A single centered Gaussian passes through the production bloom and blur shaders at output, quarter, and sixteenth resolution.</p>
+<pre id="results">Running…</pre>
+<canvas id="preview" width="32" height="32" aria-label="Wide bloom preview"></canvas>
+<script>
+(async () => {
+  const output = document.getElementById('results'), lines = [];
+  let passed = 0, total = 0;
+  function check(ok, label) { total++; passed += Number(ok); lines.push((ok ? 'PASS ' : 'FAIL ') + label); }
+  const canvas = document.createElement('canvas'), gl = canvas.getContext('webgl2');
+  try {
+    if (!gl || !gl.getExtension('EXT_color_buffer_float')) throw new Error('Floating-point WebGL2 unavailable');
+    const response = await fetch('../studies/fluid-prototype.js', { cache: 'no-store' });
+    if (!response.ok) throw new Error('Production shader source unavailable');
+    const source = await response.text();
+    const vertex = source.match(/const VERTEX = `([\s\S]*?)`;/)?.[1];
+    const header = source.match(/const HEADER = `([\s\S]*?)`;/)?.[1];
+    const bloom = source.match(/bloom:\s*`([\s\S]*?)`\s*,/)?.[1];
+    const blur = source.match(/blur:\s*`([\s\S]*?)`\s*,/)?.[1];
+    const downsample = source.match(/downsample:\s*`([\s\S]*?)`\s*,/)?.[1];
+    const wideBlur = source.match(/wideBlur:\s*`([\s\S]*?)`\s*,/)?.[1];
+    if (!vertex || !header || !bloom || !blur) throw new Error('Production bloom or blur shader unavailable');
+    function compile(type, code) {
+      const shader = gl.createShader(type);
+      gl.shaderSource(shader, code);
+      gl.compileShader(shader);
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(shader));
+      return shader;
+    }
+    function program(body) {
+      const result = gl.createProgram(), v = compile(gl.VERTEX_SHADER, vertex), f = compile(gl.FRAGMENT_SHADER, header + body);
+      gl.attachShader(result, v); gl.attachShader(result, f); gl.linkProgram(result);
+      gl.deleteShader(v); gl.deleteShader(f);
+      if (!gl.getProgramParameter(result, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(result));
+      return result;
+    }
+    function texture(w, h, make) {
+      const result = gl.createTexture(), data = new Float32Array(w * h * 4);
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) data.set(make(x, y), 4 * (y * w + x));
+      gl.bindTexture(gl.TEXTURE_2D, result);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.FLOAT, data);
+      return result;
+    }
+    function target(w, h) {
+      const result = { w, h, texture: texture(w, h, () => [0, 0, 0, 1]), framebuffer: gl.createFramebuffer() };
+      gl.bindFramebuffer(gl.FRAMEBUFFER, result.framebuffer);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, result.texture, 0);
+      if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error('Bloom framebuffer incomplete');
+      return result;
+    }
+    const bloomProgram = program(bloom), blurProgram = program(blur);
+    const downsampleProgram = downsample ? program(downsample) : null;
+    const wideBlurProgram = wideBlur ? program(wideBlur) : null;
+    if (Boolean(downsampleProgram) !== Boolean(wideBlurProgram)) throw new Error('Wide-bloom shader pair is incomplete');
+    gl.bindVertexArray(gl.createVertexArray());
+    const size = 512, glowSize = size / 4, wideSize = size / 16;
+    const composition = texture(size, size, (x, y) => {
+      const dx = (x + .5) / size - .5, dy = (y + .5) / size - .5;
+      const value = 4 * Math.exp(-(dx * dx + dy * dy) / (2 * .018 * .018));
+      return [value, value, value, 1];
+    });
+    const glowA = target(glowSize, glowSize), glowB = target(glowSize, glowSize);
+    const wideA = target(wideSize, wideSize), wideB = target(wideSize, wideSize);
+    function pass(p, name, input, destination, x, y, vectorName = 'offset') {
+      gl.useProgram(p);
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, input);
+      gl.uniform1i(gl.getUniformLocation(p, name), 0);
+      if(p===bloomProgram) gl.uniform1i(gl.getUniformLocation(p,'glass'),
+        new URLSearchParams(location.search).has('ink')?0:1);
+      const vector = gl.getUniformLocation(p, vectorName);
+      if (vector !== null) gl.uniform2f(vector, x, y);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, destination.framebuffer);
+      gl.viewport(0, 0, destination.w, destination.h);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
+    function read(t) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, t.framebuffer);
+      const pixels = new Float32Array(t.w * t.h * 4);
+      gl.readPixels(0, 0, t.w, t.h, gl.RGBA, gl.FLOAT, pixels);
+      if (gl.getError() !== gl.NO_ERROR) throw new Error('Bloom readback failed');
+      return pixels;
+    }
+    pass(bloomProgram, 'dye', composition, glowA, 1 / size, 1 / size, 'texel');
+    pass(blurProgram, 'source', glowA.texture, glowB, 1 / glowSize, 0);
+    pass(blurProgram, 'source', glowB.texture, glowA, 0, 1 / glowSize);
+    const glow = read(glowA);
+    if (downsampleProgram && wideBlurProgram) {
+      pass(downsampleProgram, 'source', glowA.texture, wideA, 1 / wideSize, 1 / wideSize, 'sourceFootprint');
+      pass(wideBlurProgram, 'source', wideA.texture, wideB, 1 / wideSize, 0);
+      pass(wideBlurProgram, 'source', wideB.texture, wideA, 0, 1 / wideSize);
+    } else {
+      pass(blurProgram, 'source', glowA.texture, wideB, 2 / wideSize, 0);
+      pass(blurProgram, 'source', wideB.texture, wideA, 0, 2 / wideSize);
+    }
+    const wide = read(wideA);
+    function value(pixels, w, x, y) { return pixels[4 * (y * w + x)]; }
+    const center = Math.max(value(wide, wideSize, 15, 15), value(wide, wideSize, 15, 16),
+      value(wide, wideSize, 16, 15), value(wide, wideSize, 16, 16));
+    let offAxis = 0, maxValue = 0, maxRadius = 0, wideSum = 0;
+    const rings = Array.from({ length: 9 }, () => ({ sum: 0, count: 0 }));
+    for (let y = 0; y < wideSize; y++) for (let x = 0; x < wideSize; x++) {
+      const brightness = value(wide, wideSize, x, y);
+      const radius = Math.hypot(x - 15.5, y - 15.5);
+      wideSum += brightness;
+      if (radius >= 1.5 && radius <= 8) offAxis = Math.max(offAxis, brightness);
+      if (brightness > maxValue) { maxValue = brightness; maxRadius = radius; }
+      const ring = Math.floor(radius);
+      if (ring < rings.length) { rings[ring].sum += brightness; rings[ring].count++; }
+    }
+    let glowSum = 0;
+    for (let i = 0; i < glow.length; i += 4) glowSum += glow[i];
+    const energyRatio = (wideSum / (wideSize * wideSize)) / (glowSum / (glowSize * glowSize));
+    const ringMeans = rings.map(ring => ring.sum / Math.max(ring.count, 1));
+    const monotone = ringMeans.slice(1).every((mean, index) => mean <= ringMeans[index] * 1.10 + .001);
+    check(center > 0, 'Centered input produces nonzero wide bloom');
+    check(offAxis <= center * 1.05 + .001,
+      'Wide halo has no detached off-axis peaks (center ' + center.toFixed(4) + ', off-axis ' + offAxis.toFixed(4) + ')');
+    check(maxRadius <= 1.5, 'Brightest wide-bloom pixel stays at the source (radius ' + maxRadius.toFixed(2) + ' pixels)');
+    check(monotone, 'Radial mean brightness declines away from the source (' + ringMeans.map(value => value.toFixed(3)).join(', ') + ')');
+    check(energyRatio > .6 && energyRatio < 1.4, 'Wide pass retains average glow energy (ratio ' + energyRatio.toFixed(3) + ')');
+    check(wide.every(Number.isFinite) && gl.getError() === gl.NO_ERROR, 'Wide bloom remains finite and has no WebGL errors');
+    const preview = document.getElementById('preview'), context = preview.getContext('2d');
+    const image = context.createImageData(wideSize, wideSize);
+    for (let i = 0; i < wideSize * wideSize; i++) {
+      const shade = Math.round(255 * Math.sqrt(Math.max(wide[4 * i], 0) / Math.max(maxValue, 1e-8)));
+      image.data.set([shade, shade, shade, 255], 4 * i);
+    }
+    context.putImageData(image, 0, 0);
+  } catch (error) { check(false, error.message); }
+  gl?.getExtension('WEBGL_lose_context')?.loseContext();
+  output.textContent = lines.join('\n') + '\n' + passed + '/' + total + ' passed';
+  output.dataset.state = passed === total ? 'passed' : 'failed';
+})();
+</script>
+</html>

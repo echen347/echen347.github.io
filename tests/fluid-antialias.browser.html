@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Fluid seed sampling checks</title>
+<style>
+  body { background: #101318; color: #dcecef; font: 14px/1.6 system-ui; padding: 24px; }
+  li[data-pass="false"] { color: #ff9999; }
+  li[data-pass="true"] { color: #93dab3; }
+</style>
+<h1>Fluid seed sampling checks</h1>
+<ol id="results"></ol>
+<p id="summary">Running…</p>
+<script>
+(async () => {
+  const canvas = document.createElement('canvas');
+  const gl = canvas.getContext('webgl2', { antialias: false, preserveDrawingBuffer: true });
+  const results = document.getElementById('results');
+  let passed = 0, failed = 0;
+  function check(ok, label, detail) {
+    const item = document.createElement('li');
+    item.dataset.pass = String(Boolean(ok));
+    item.textContent = (ok ? 'PASS' : 'FAIL') + ': ' + label + (detail ? ' (' + detail + ')' : '');
+    results.append(item);
+    ok ? passed++ : failed++;
+  }
+  try {
+    if (!gl || !gl.getExtension('EXT_color_buffer_float')) throw new Error('Floating point WebGL unavailable');
+    const source = await (await fetch('../studies/fluid-prototype.js', { cache: 'no-store' })).text();
+    const match = source.match(/seed: `([\s\S]*?)`,\s*[A-Za-z]+:/);
+    if (!match) throw new Error('Production seed shader unavailable');
+    const vertex = `#version 300 es
+      out vec2 uv;
+      void main() {
+        vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
+        uv = p;
+        gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+      }`;
+    const fragment = `#version 300 es
+      precision highp float;
+      precision highp sampler2D;
+      in vec2 uv;
+      out vec4 outColor;
+      ` + match[1];
+    function compile(type, code) {
+      const shader = gl.createShader(type);
+      gl.shaderSource(shader, code);
+      gl.compileShader(shader);
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(shader));
+      return shader;
+    }
+    const program = gl.createProgram();
+    gl.attachShader(program, compile(gl.VERTEX_SHADER, vertex));
+    gl.attachShader(program, compile(gl.FRAGMENT_SHADER, fragment));
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program));
+    gl.useProgram(program);
+    gl.bindVertexArray(gl.createVertexArray());
+    const blank = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, blank);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, 1, 1, 0, gl.RGBA, gl.FLOAT, new Float32Array([0, 0, 0, 1]));
+    gl.uniform1i(gl.getUniformLocation(program, 'source'), 0);
+    gl.uniform1i(gl.getUniformLocation(program, 'deformation'), 0);
+    gl.uniform1i(gl.getUniformLocation(program, 'field'), 0);
+    gl.uniform1i(gl.getUniformLocation(program, 'glass'), 1);
+    gl.uniform1f(gl.getUniformLocation(program, 'warp'), 0);
+    gl.uniform1f(gl.getUniformLocation(program, 'amount'), 1);
+    gl.uniform2f(gl.getUniformLocation(program, 'flowScale'), 1, 1);
+    gl.uniform3f(gl.getUniformLocation(program, 'waveB'), .09, 800, 1);
+    const aspectLocation = gl.getUniformLocation(program, 'aspect');
+    const phaseLocation = gl.getUniformLocation(program, 'phase');
+    const waveLocation = gl.getUniformLocation(program, 'waveA');
+    const flowLocation = gl.getUniformLocation(program, 'flowSpeed');
+    const tintLocations = ['tintA', 'tintB', 'tintMist'].map(name => gl.getUniformLocation(program, name));
+    const styles = [
+      { name: 'Legacy waves', flowSpeed: 0, wave: [-.19, 1, 1],
+        colors: [[.045, .31, .56], [1, .43, .12], [.54, .72, .82]] },
+      { name: 'Randomized parallel waves', flowSpeed: .018, wave: [-.19, .4, .5],
+        colors: [[.10, .16, .64], [.92, .20, .39], [.71, .62, .86]] }
+    ];
+    function render(width, height, phase, style) {
+      canvas.width = width; canvas.height = height;
+      const texture = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, width, height, 0, gl.RGBA, gl.FLOAT, null);
+      const framebuffer = gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+      if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error('Seed fixture framebuffer incomplete');
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, blank);
+      gl.uniform1f(aspectLocation, width / height);
+      gl.uniform1f(phaseLocation, phase);
+      gl.uniform3f(waveLocation, ...style.wave);
+      gl.uniform1f(flowLocation, style.flowSpeed);
+      tintLocations.forEach((location, index) => gl.uniform3f(location, ...style.colors[index]));
+      gl.viewport(0, 0, width, height);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      const pixels = new Float32Array(width * height * 4);
+      gl.readPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, pixels);
+      gl.deleteFramebuffer(framebuffer);
+      gl.deleteTexture(texture);
+      return pixels;
+    }
+    function compare(low, high, width, height) {
+      let squaredError = 0, squaredReference = 0, maximumError = 0, maximumReference = 0;
+      for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+        for (let channel = 0; channel < 3; channel++) {
+          let reference = 0;
+          for (let sy = 0; sy < 4; sy++) for (let sx = 0; sx < 4; sx++) {
+            reference += high[(((y * 4 + sy) * width * 4 + x * 4 + sx) * 4) + channel] / 16;
+          }
+          const actual = low[(y * width + x) * 4 + channel];
+          const error = actual - reference;
+          squaredError += error * error;
+          squaredReference += reference * reference;
+          maximumError = Math.max(maximumError, Math.abs(error));
+          maximumReference = Math.max(maximumReference, reference);
+        }
+      }
+      return { rms: Math.sqrt(squaredError / Math.max(squaredReference, 1e-9)), max: maximumError / Math.max(maximumReference, 1e-9) };
+    }
+    function stripeScore(pixels, width, height) {
+      let change = 0, signal = 0;
+      const luminance = (x, y) => {
+        const i = (y * width + x) * 4;
+        return pixels[i] * .25 + pixels[i + 1] * .55 + pixels[i + 2] * .20;
+      };
+      for (const fraction of [.35, .45, .55, .65]) {
+        const x = Math.floor(width * fraction);
+        for (let y = Math.floor(height * .16) + 1; y < Math.floor(height * .84); y++) {
+          const previous = luminance(x, y - 1), current = luminance(x, y);
+          change += Math.abs(current - previous);
+          signal += (current + previous) * .5;
+        }
+      }
+      return { change: change / Math.max(signal, 1e-9), signal };
+    }
+    for (const style of styles) for (const [width, height, phase] of [[128, 128, .37], [128, 72, 1.27]]) {
+      const low = render(width, height, phase, style);
+      const high = render(width * 4, height * 4, phase, style);
+      const error = compare(low, high, width, height);
+      const stripes = stripeScore(high, width * 4, height * 4);
+      const label = style.name + ', ' + width + 'x' + height + ', phase ' + phase;
+      check(stripes.signal > 1 && stripes.change > .12, 'Seed contains resolved luminous filaments', label + ': edge score ' + stripes.change.toFixed(3) + ', 4x RMS diagnostic ' + error.rms.toFixed(3) + ', max ' + error.max.toFixed(3));
+    }
+    if (match[1].includes('float filteredPulse(')) {
+      const helpers = match[1].slice(0, match[1].indexOf('void main()'));
+      const pulseFragment = `#version 300 es
+        precision highp float;
+        uniform vec2 slope;
+        uniform float testPhase;
+        out vec4 outColor;
+        ` + helpers + `
+        void main() {
+          float strand = testPhase + dot(gl_FragCoord.xy - vec2(8.5), slope);
+          vec2 footprint = vec2(dFdx(strand), dFdy(strand));
+          outColor = vec4(filteredPulse(strand, footprint, 10), filteredPulse(strand, footprint, 30), 0, 1);
+        }`;
+      const pulseProgram = gl.createProgram();
+      gl.attachShader(pulseProgram, compile(gl.VERTEX_SHADER, vertex));
+      gl.attachShader(pulseProgram, compile(gl.FRAGMENT_SHADER, pulseFragment));
+      gl.linkProgram(pulseProgram);
+      if (!gl.getProgramParameter(pulseProgram, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(pulseProgram));
+      gl.useProgram(pulseProgram);
+      const pulseTexture = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, pulseTexture);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, 16, 16, 0, gl.RGBA, gl.FLOAT, null);
+      const pulseFramebuffer = gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, pulseFramebuffer);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, pulseTexture, 0);
+      if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error('Pulse fixture framebuffer incomplete');
+      function reference(phase, dx, dy, power) {
+        const sinc = x => Math.abs(x) < 1e-8 ? 1 : Math.sin(x) / x;
+        let sum = 0;
+        for (let k = 0; k <= power; k++) {
+          let coefficient = 0;
+          for (let n = 0; n < 2048; n++) {
+            const angle = (n + .5) * 2 * Math.PI / 2048;
+            coefficient += Math.pow(.5 + .5 * Math.cos(angle), power) * Math.cos(k * angle) / 2048;
+          }
+          const frequency = k * Math.max(Math.abs(dx), Math.abs(dy));
+          const t = Math.max(0, Math.min(1, (frequency - Math.PI * .65) / (Math.PI * .35)));
+          const bandlimit = 1 - t * t * (3 - 2 * t);
+          sum += (k === 0 ? 1 : 2) * coefficient * Math.cos(k * phase) * sinc(dx * k * .5) * sinc(dy * k * .5) * bandlimit;
+        }
+        return Math.max(0, Math.min(1, sum));
+      }
+      for (const [phase, dx, dy] of [[0, .7, .2], [.5, 1.4, .8], [1.7, 2.1, 1.1], [0, 6.28, 0]]) {
+        gl.uniform2f(gl.getUniformLocation(pulseProgram, 'slope'), dx, dy);
+        gl.uniform1f(gl.getUniformLocation(pulseProgram, 'testPhase'), phase);
+        gl.viewport(0, 0, 16, 16);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+        const value = new Float32Array(4);
+        gl.readPixels(8, 8, 1, 1, gl.RGBA, gl.FLOAT, value);
+        for (const [channel, power, name] of [[0, 10, 'filament'], [1, 30, 'white core']]) {
+          const error = Math.abs(value[channel] - reference(phase, dx, dy, power));
+          check(error < .002, name + ' keeps resolvable harmonics', 'slope ' + dx + '/' + dy + ', error ' + error.toFixed(5));
+        }
+      }
+      gl.deleteFramebuffer(pulseFramebuffer);
+      gl.deleteTexture(pulseTexture);
+      gl.deleteProgram(pulseProgram);
+    }
+    check(gl.getError() === gl.NO_ERROR, 'Full seed fixture has no WebGL errors');
+  } catch (error) {
+    check(false, error.message);
+  }
+  document.getElementById('summary').textContent = passed + ' passed, ' + failed + ' failed';
+  document.body.dataset.result = failed ? 'failed' : 'passed';
+  gl?.getExtension('WEBGL_lose_context')?.loseContext();
+})();
+</script>
+</html>

@@ -1,0 +1,39 @@
+{
+  "signature": "4a8aa03f0560cfcc",
+  "sources": {
+    "jpeg": [
+      {
+        "src": "images/headshot/headshot-240.jpg",
+        "width": 240,
+        "height": 320
+      },
+      {
+        "src": "images/headshot/headshot-480.jpg",
+        "width": 480,
+        "height": 640
+      },
+      {
+        "src": "images/headshot/headshot-720.jpg",
+        "width": 720,
+        "height": 960
+      }
+    ],
+    "webp": [
+      {
+        "src": "images/headshot/headshot-240.webp",
+        "width": 240,
+        "height": 320
+      },
+      {
+        "src": "images/headshot/headshot-480.webp",
+        "width": 480,
+        "height": 640
+      },
+      {
+        "src": "images/headshot/headshot-720.webp",
+        "width": 720,
+        "height": 960
+      }
+    ]
+  }
+}

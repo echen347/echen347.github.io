@@ -20,11 +20,6 @@ function clearActive(storage) { storage.removeItem('chaewonMode'); }
 function isStoredActive(storage) { return storage.getItem('chaewonMode') === '1'; }
 function markFirstSeen(storage) { storage.setItem('chaewonModeFirstSeen', '1'); }
 function hasFirstSeen(storage) { return storage.getItem('chaewonModeFirstSeen') === '1'; }
-function setHuntProgress(storage, n) { storage.setItem('chaewonHuntProgress', String(n)); }
-function getHuntProgress(storage) {
-  const v = storage.getItem('chaewonHuntProgress');
-  return v == null ? 0 : Math.max(0, Math.min(5, parseInt(v, 10) || 0));
-}
 
 test('setActive stores "1" under chaewonMode', () => {
   const s = createMockStorage();
@@ -57,27 +52,73 @@ test('hasFirstSeen returns true after markFirstSeen', () => {
   assert.strictEqual(hasFirstSeen(s), true);
 });
 
-test('hunt progress starts at 0', () => {
-  const s = createMockStorage();
-  assert.strictEqual(getHuntProgress(s), 0);
+// Startup on a touch-first device, then pointer changes and page restores,
+// driven through the real chaewon.js and its event-emitting media queries.
+const { boot } = require('./harness.cjs');
+function touchStart() {
+  const app = boot({ touch: true, reduceMotion: true });
+  app.localStorage.setItem('chaewonModeFirstSeen', '1');
+  return app;
+}
+const mode = app => app.window.ChaewonMode;
+
+test('coarse startup with a stale stored flag stays inactive and clears the flag', () => {
+  const app = touchStart();
+  app.sessionStorage.setItem('chaewonMode', '1');
+  app.loadChaewon();
+  assert.strictEqual(mode(app).isActive(), false);
+  assert.strictEqual(app.sessionStorage.getItem('chaewonMode'), null);
 });
 
-test('hunt progress can be incremented and read back', () => {
-  const s = createMockStorage();
-  setHuntProgress(s, 3);
-  assert.strictEqual(getHuntProgress(s), 3);
+test('coarse startup, then a fine pointer, then typing chaewon activates once', () => {
+  const app = touchStart();
+  app.loadChaewon();
+  app.setTouch(false);
+  app.type('chaewon');
+  assert.strictEqual(mode(app).isActive(), true);
 });
 
-test('hunt progress clamps to 0..5', () => {
-  const s = createMockStorage();
-  setHuntProgress(s, -10);
-  assert.strictEqual(getHuntProgress(s), 0);
-  setHuntProgress(s, 100);
-  assert.strictEqual(getHuntProgress(s), 5);
+test('coarse startup, fine, activate, then coarse again deactivates at once', () => {
+  const app = touchStart();
+  app.loadChaewon();
+  app.setTouch(false);
+  mode(app).activate({ skipCinematic: true });
+  assert.strictEqual(mode(app).isActive(), true);
+  app.setTouch(true);
+  assert.strictEqual(mode(app).isActive(), false);
+  assert.strictEqual(app.sessionStorage.getItem('chaewonMode'), null);
+});
+
+test('coarse startup, fine, activate, then a coarse page restore leaves the mode', () => {
+  const app = touchStart();
+  app.loadChaewon();
+  app.setTouch(false);
+  mode(app).activate({ skipCinematic: true });
+  app.window.matchMedia('(pointer: coarse)').matches = true;
+  app.window.dispatchEvent({ type: 'pageshow', persisted: true });
+  assert.strictEqual(mode(app).isActive(), false);
+});
+
+test('repeated pointer changes and page restores add no duplicate listeners', () => {
+  const app = touchStart();
+  app.loadChaewon();
+  const keydown = app.document.listenerCount('keydown');
+  const change = app.window.matchMedia('(pointer: coarse)').listenerCount('change');
+  const pageshow = app.window.listenerCount('pageshow');
+  for (let i = 0; i < 4; i++) {
+    app.setTouch(false);
+    app.setTouch(true);
+    app.window.dispatchEvent({ type: 'pageshow', persisted: true });
+  }
+  assert.strictEqual(app.document.listenerCount('keydown'), keydown);
+  assert.strictEqual(app.window.matchMedia('(pointer: coarse)').listenerCount('change'), change);
+  assert.strictEqual(app.window.listenerCount('pageshow'), pageshow);
+  app.setTouch(false);
+  app.type('chaewon');
+  assert.strictEqual(mode(app).isActive(), true, 'one trigger, one toggle');
 });
 
 module.exports = {
   setActive, clearActive, isStoredActive,
   markFirstSeen, hasFirstSeen,
-  setHuntProgress, getHuntProgress,
 };

@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fluid idle timeline</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px; background: #080d14; color: #dcecef; font: 14px/1.5 system-ui; }
+  h1 { margin: 0 0 8px; font-size: 22px; font-weight: 500; }
+  p { margin: 0 0 18px; color: #aabcc6; }
+  #progress { width: min(640px, 100%); height: 10px; margin: 0 0 8px; }
+  main { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 18px; }
+  figure { margin: 0; background: #02060b; border: 1px solid #263540; }
+  figure canvas { display: block; width: 100%; background: #02060b; }
+  figcaption { padding: 10px 12px 14px; }
+  strong { display: block; margin-bottom: 3px; font-weight: 500; }
+  output { display: block; color: #aabcc6; font-variant-numeric: tabular-nums; }
+  #scene { position: fixed; left: -10000px; top: 0; }
+  #checks { margin: 0 0 20px; padding-left: 20px; font-variant-numeric: tabular-nums; }
+  #checks [data-pass="false"] { color: #ff9b91; }
+  #checks [data-pass="true"] { color: #9dddb5; }
+</style>
+<h1>Fluid idle timeline</h1>
+<p>One untouched scene advances at 60 simulated ticks per second. The fluid transports one initial light pattern without reseeding. The default canvas is 640 × 360 because bloom radii are fixed in device pixels and a smaller canvas overstates the halo; add <code>?width=600&amp;height=338</code> to run the narrow solver.</p>
+<p id="mode"></p>
+<progress id="progress" max="3600" value="0"></progress>
+<p id="status" role="status">Preparing graphics…</p>
+<ol id="checks"></ol>
+<canvas id="scene" aria-hidden="true"></canvas>
+<main id="snapshots"></main>
+<script>
+(async () => {
+  const status = document.getElementById('status');
+  const progress = document.getElementById('progress');
+  const snapshots = document.getElementById('snapshots');
+  const checks = document.getElementById('checks');
+  const canvas = document.getElementById('scene');
+  const query = new URLSearchParams(location.search);
+  function dimension(name, fallback, limit) {
+    const raw = query.get(name);
+    if (raw === null) return fallback;
+    const value = Number(raw);
+    if (!Number.isInteger(value) || value < 160 || value > limit) throw new Error('Invalid ' + name + ' query parameter');
+    return value;
+  }
+  // Bloom radii are fixed in device pixels, so a smaller canvas overstates the halo.
+  const width = dimension('width', 640, 800);
+  const height = dimension('height', 360, 900);
+  const duration = query.get('duration') === '180' ? 180 : 60;
+  const totalFrames = duration * 60;
+  canvas.style.width = width + 'px';
+  canvas.style.height = height + 'px';
+  progress.max = totalFrames;
+  document.getElementById('mode').textContent = 'Production runtime, unchanged · ' + width + ' × ' + height + ' CSS pixels · ' + duration + ' seconds.';
+  const targets = new Set([0, 300, 900, 1800, 3600, totalFrames]);
+  const callbacks = new Map();
+  const records = new Map();
+  let clock = 0, nextId = 1, scene, failed = 0, glChecks = 0;
+  function check(pass, label) {
+    const item = document.createElement('li');
+    item.dataset.pass = String(pass);
+    item.textContent = (pass ? 'PASS · ' : 'FAIL · ') + label;
+    checks.append(item);
+    if (!pass) failed++;
+  }
+  function queuedFrame(callback) {
+    const id = nextId++;
+    callbacks.set(id, callback);
+    return id;
+  }
+  function cancelQueuedFrame(id) { callbacks.delete(id); }
+  function metrics(pixels, width, height) {
+    const luminance = new Float32Array(width * height);
+    let sum = 0, bright = 0, dark = 0, peak = 0, change = 0;
+    for (let i = 0; i < luminance.length; i++) {
+      const p = i * 4;
+      const value = pixels[p] * .25 + pixels[p + 1] * .55 + pixels[p + 2] * .20;
+      luminance[i] = value;
+      sum += value;
+      peak = Math.max(peak, value);
+      if (value > 170) bright++;
+      if (value < 25) dark++;
+    }
+    for (let y = 1; y < height; y++) for (let x = 1; x < width; x++) {
+      const i = y * width + x;
+      change += Math.abs(luminance[i] - luminance[i - 1]);
+      change += Math.abs(luminance[i] - luminance[i - width]);
+    }
+    return {
+      mean: sum / luminance.length,
+      bright: 100 * bright / luminance.length,
+      dark: 100 * dark / luminance.length,
+      peak,
+      edge: change / Math.max(sum * 2, 1)
+    };
+  }
+  function readPixels(second) {
+    const gl = canvas.getContext('webgl2');
+    const width = canvas.width, height = canvas.height;
+    const pixels = new Uint8Array(width * height * 4);
+    gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+    if (gl.getError() !== gl.NO_ERROR) throw new Error('WebGL readback failed at ' + second + ' seconds');
+    glChecks++;
+    return pixels;
+  }
+  function capture(second) {
+    scene.render();
+    const width = canvas.width, height = canvas.height;
+    const pixels = readPixels(second);
+    const data = metrics(pixels, width, height);
+    records.set(second, { pixels, data, frames: Number(canvas.dataset.frames), interactions: Number(canvas.dataset.interactions) });
+    const figure = document.createElement('figure');
+    const image = document.createElement('canvas');
+    image.width = width; image.height = height;
+    image.style.aspectRatio = width + ' / ' + height;
+    image.getContext('2d').drawImage(canvas, 0, 0);
+    const caption = document.createElement('figcaption');
+    const title = document.createElement('strong');
+    title.textContent = second + ' seconds';
+    const details = document.createElement('output');
+    details.textContent = 'Mean ' + data.mean.toFixed(1) + '/255 · Bright ' + data.bright.toFixed(2) + '% · Dark ' + data.dark.toFixed(2) + '% · Peak ' + data.peak.toFixed(0) + '/255 · Edge ' + data.edge.toFixed(4) + ' · Frames ' + canvas.dataset.frames + ' · Interactions ' + canvas.dataset.interactions;
+    caption.append(title, details);
+    figure.append(image, caption);
+    snapshots.append(figure);
+  }
+  function changedShare(a, b) {
+    let changed = 0;
+    for (let i = 0; i < a.length; i += 4) {
+      if (Math.max(Math.abs(a[i] - b[i]), Math.abs(a[i + 1] - b[i + 1]), Math.abs(a[i + 2] - b[i + 2])) > 8) changed++;
+    }
+    return 100 * changed / (a.length / 4);
+  }
+  try {
+    if (document.hidden) throw new Error('Open this page in a visible tab to advance the simulation');
+    const response = await fetch('../studies/fluid-prototype.js', { cache: 'no-store' });
+    if (!response.ok) throw new Error('Could not load the fluid runtime');
+    const source = await response.text();
+    const create = new Function('requestAnimationFrame', 'cancelAnimationFrame', 'performance',
+      source + '\nreturn window.FluidPrototype.create;')(queuedFrame, cancelQueuedFrame, { now: () => clock });
+    scene = create(canvas, { paused: false, ambient: true, seed: 347 });
+    if (canvas.dataset.state !== 'ready') throw new Error('Fluid renderer did not become ready');
+    capture(0);
+    scene.setPaused(true);
+    scene.render();
+    const pausedA = readPixels('paused A');
+    scene.render();
+    const pausedB = readPixels('paused B');
+    check(pausedA.every((value, index) => value === pausedB[index]), 'Paused repeat renders match pixel for pixel');
+    scene.setPaused(false);
+    for (let frame = 1; frame <= totalFrames; frame++) {
+      const first = callbacks.entries().next().value;
+      if (!first) throw new Error('Simulation stopped at frame ' + frame);
+      callbacks.delete(first[0]);
+      clock = frame * (1000 / 60);
+      first[1](clock);
+      if (targets.has(frame)) capture(frame / 60);
+      if (frame % 10 === 0) {
+        progress.value = frame;
+        status.textContent = 'Simulated ' + (frame / 60).toFixed(1) + ' / ' + duration + ' seconds · ' + canvas.dataset.frames + ' advancing frames';
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+    }
+    const initial = records.get(0);
+    check(initial.data.bright > 0.1, 'Initial scene has a measurable bright-pixel baseline (' + initial.data.bright.toFixed(2) + '%)');
+    for (const second of [...targets].sort((a, b) => a - b).map(frame => frame / 60)) {
+      const record = records.get(second);
+      check(record.data.dark >= 25, second + 's retains dark space (' + record.data.dark.toFixed(1) + '% ≥ 25%)');
+      if (second > 0) {
+        check(record.data.bright >= initial.data.bright * .5, second + 's bright share ' + record.data.bright.toFixed(2) + '% ≥ 50% of initial ' + initial.data.bright.toFixed(2) + '%');
+        check(record.data.mean >= initial.data.mean * .75, second + 's mean luma ' + record.data.mean.toFixed(1) + ' ≥ 75% of initial ' + initial.data.mean.toFixed(1));
+      }
+      check(record.interactions === 0, second + 's has zero interactions');
+    }
+    const motion = changedShare(initial.pixels, records.get(5).pixels);
+    check(motion > 1, 'Scene changes during playback (' + motion.toFixed(1) + '% of pixels differ at 5s)');
+    check(records.get(duration).frames === totalFrames, 'Simulation advanced ' + totalFrames + ' frames');
+    check(glChecks === records.size + 2, 'No WebGL errors across ' + glChecks + ' readbacks');
+    status.textContent = failed ? 'FAIL · ' + failed + ' regression checks failed.' : 'PASS · All idle checks passed.';
+    document.body.dataset.result = failed ? 'fail' : 'pass';
+  } catch (error) {
+    status.textContent = 'Stopped: ' + error.message;
+    document.body.dataset.result = 'error';
+  } finally {
+    scene?.dispose();
+  }
+})();
+</script>
+</html>

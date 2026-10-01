@@ -118,7 +118,7 @@ async function main() {
       assert.ok(!requests.some(url => originals.includes(url)), 'Scrolling must use generated images');
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
       if (process.env.CHECK_HOMEPAGE === '1') {
-        await page.goto(site + '/');
+        await page.goto(site + '/#profile');
         await page.waitForFunction(() => {
           const image = document.querySelector('.bio-flex img');
           return image.complete && image.naturalWidth > 0;

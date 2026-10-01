@@ -3,29 +3,75 @@
 (function () {
   'use strict';
 
-  // Will hold all module state. Populated by init().
+  // mode: Chaewon Mode is on (session-wide, typed toggle). active: the legacy
+  // decorations are shown. On the homepage entrance an attached concert
+  // (chaewon/concert-mode.js) presents the mode instead, so the two never overlap.
   const state = {
+    mode: false,
     active: false,
     keyBuffer: '',
-    huntProgress: 0,
   };
+  let concert = null;
+
+  // Chaewon Mode is desktop-only (decided 2026-09-30). On devices whose primary
+  // pointer is coarse, it never starts and a stale session flag is cleared. The
+  // primary pointer alone decides: Samsung Internet and other Chromium builds
+  // before 149 also report hover on touch-only Android devices. The check is
+  // live, so a 2-in-1 that switches to tablet mode leaves the mode. The former
+  // five-heart hunt is archived in chaewon/archive/mobile-hunt.md.
+  const touchQuery = window.matchMedia ? window.matchMedia('(pointer: coarse)') : null;
+  const isTouchFirst = () => !!(touchQuery && touchQuery.matches);
 
   // ---------- Public API (exposed for tests + console use) ----------
   window.ChaewonMode = {
     activate,
     deactivate,
-    isActive: () => state.active,
+    isActive: () => state.mode,
+    setConcert,   // homepage entrance: attach (or detach with null) the concert controller
+    refresh,      // homepage: call after enabling or disabling the concert
     _state: state, // exposed for tests; do not rely on in production code
   };
 
   // ---------- Lifecycle ----------
   function activate(opts = {}) {
+    if (state.mode || isTouchFirst()) return;
+    state.mode = true;
+    setStoredActive();
+    render(opts);
+  }
+
+  function deactivate() {
+    if (!state.mode) return;
+    state.mode = false;
+    clearStoredActive();
+    render();
+  }
+
+  // One presentation at a time: the concert when an enabled one is attached,
+  // otherwise the legacy decorations.
+  function render(opts = {}) {
+    const want = !state.mode ? 'none' : concert && concert.isEnabled() ? 'concert' : 'legacy';
+    if (want !== 'legacy' && state.active) hideLegacy();
+    if (want !== 'concert' && concert && concert.isActive()) concert.leave();
+    if (want === 'legacy' && !state.active) showLegacy(opts);
+    if (want === 'concert' && !concert.isActive()) concert.activate();
+  }
+
+  function setConcert(controller) {
+    if (controller === concert) return;
+    if (concert && concert.isActive()) concert.leave({ immediate: true });
+    concert = controller || null;
+    render({ skipCinematic: true });
+  }
+
+  function refresh() { render({ skipCinematic: true }); }
+
+  function showLegacy(opts = {}) {
     if (state.active) return;
     const { skipCinematic = false } = opts;
     document.body.classList.add('chaewon-mode');
-    setStoredActive();
     state.active = true;
-    removeHuntHearts();   // hunt is done once the mode is on
+    attachHeadingTranslations();
     ensureExitButton();
     applyCardClassMarkers();
     attachAllCardTilts();
@@ -33,19 +79,19 @@
     ensureMarquees();
     ensureBackground();
     decorateHeadshot();
-    preloadPhotos();      // warm the image cache for the SMC reskin + bubbles
-    ensureBubbles();      // floating Chaewon photo bubbles on the bio page
+    ensureBubbles();      // load decorative photos only when bubbles can appear
     injectStanContent();  // per-page stan comments / intro (no-op where N/A)
     // First manual activation per browser plays the reveal cinematic.
     if (!skipCinematic && !hasFirstSeen()) playCinematic();
     markFirstSeen();
   }
 
-  function deactivate() {
+  function hideLegacy() {
     if (!state.active) return;
     document.body.classList.remove('chaewon-mode');
-    clearStoredActive();
     state.active = false;
+    _assetGeneration++;
+    _photoPreloadPromise = null;
     removeExitButton();
     removeCardClassMarkers();
     removeMarquees();
@@ -53,6 +99,8 @@
     undecorateHeadshot();
     removeBubbles();
     endCinematic();
+    endTransientEffects();
+    restoreHeadings();
     removeStanContent();
     if (_idleTimer) { clearTimeout(_idleTimer); _idleTimer = null; }
     // Subsequent phases: cleanup listeners, restore SMC rendering, etc.
@@ -90,22 +138,16 @@
   // ---------- Persistence helpers — mirror tests/chaewon/persistence.test.js ----------
   const SESSION_KEY = 'chaewonMode';
   const FIRST_SEEN_KEY = 'chaewonModeFirstSeen';
-  const HUNT_KEY = 'chaewonHuntProgress';
 
   function isStoredActive() { return sessionStorage.getItem(SESSION_KEY) === '1'; }
   function setStoredActive() { sessionStorage.setItem(SESSION_KEY, '1'); }
   function clearStoredActive() { sessionStorage.removeItem(SESSION_KEY); }
   function hasFirstSeen() { return localStorage.getItem(FIRST_SEEN_KEY) === '1'; }
   function markFirstSeen() { localStorage.setItem(FIRST_SEEN_KEY, '1'); }
-  function getHuntProgress() {
-    const v = sessionStorage.getItem(HUNT_KEY);
-    if (v == null) return 0;
-    return Math.max(0, Math.min(5, parseInt(v, 10) || 0));
-  }
-  function setHuntProgress(n) { sessionStorage.setItem(HUNT_KEY, String(n)); }
 
   // ---------- Asset loading — cached for the session ----------
   let _manifestCache = null;
+  let _assetGeneration = 0;
 
   function parseManifest(json) {
     const data = typeof json === 'string' ? JSON.parse(json) : json;
@@ -157,20 +199,32 @@
   // network fetch. randomPhoto() returns null until at least one has decoded, so
   // callers should fall back gracefully and retry on a later frame.
   let _photoImages = [];
-  let _photoPreloadStarted = false;
+  let _photoPreloadPromise = null;
   async function preloadPhotos() {
-    if (_photoPreloadStarted) return _photoImages;
-    _photoPreloadStarted = true;
-    const manifest = await loadManifest();
-    _photoImages = manifest.bubbles.map(b => {
-      const img = new Image();
-      img.src = assetUrl(b.file);
-      img.alt = b.alt || 'chaewon';
-      return { img, alt: img.alt };
-    });
-    return _photoImages;
+    if (!state.active || _reduceMotion) return [];
+    if (_photoImages.length) return _photoImages;
+    if (!_photoPreloadPromise) {
+      const generation = _assetGeneration;
+      const pending = (async () => {
+        const manifest = await loadManifest();
+        if (!state.active || generation !== _assetGeneration) return [];
+        _photoImages = manifest.bubbles.map(b => {
+          const img = new Image();
+          img.alt = b.alt || 'chaewon';
+          img.src = assetUrl(b.file);
+          return { img, alt: img.alt };
+        });
+        return _photoImages;
+      })();
+      _photoPreloadPromise = pending;
+      pending.finally(() => {
+        if (_photoPreloadPromise === pending) _photoPreloadPromise = null;
+      });
+    }
+    return _photoPreloadPromise;
   }
   function loadedPhotos() {
+    if (!state.active) return [];
     return _photoImages.filter(p => p.img.complete && p.img.naturalWidth > 0).map(p => p.img);
   }
   function randomPhoto() {
@@ -195,8 +249,10 @@
     window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   async function ensureBubbles() {
-    if (_bubbleLayer || _reduceMotion) return;
+    if (_bubbleLayer || _reduceMotion || !state.active) return;
+    const generation = _assetGeneration;
     await preloadPhotos();
+    if (!state.active || generation !== _assetGeneration) return;
     const photos = loadedPhotos();
     if (!photos.length) {
       // Images still decoding — retry while still active. Tracked (so deactivate
@@ -396,7 +452,12 @@
     document.querySelectorAll('.chaewon-stan-comment, .chaewon-stan-intro').forEach(el => el.remove());
   }
 
+  function isEditable(target) {
+    return !!target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName || ''));
+  }
+
   function handleKeydown(e) {
+    if (isEditable(e.target)) return;
     const key = e.key;
     if (typeof key !== 'string' || key.length !== 1) return;
     const normalized = key.toLowerCase();
@@ -406,8 +467,10 @@
       if (state.keyBuffer.endsWith(t)) {
         state.keyBuffer = '';   // reset to prevent ghost matches
         if (t === 'chaewon') {
-          if (state.active) deactivate();
+          if (state.mode) deactivate();
           else activate();
+        } else if (concert && concert.isActive()) {
+          concert.applyCue(t);
         } else {
           handleSubEgg(t);
         }
@@ -479,6 +542,16 @@
       document.body.appendChild(shoot);
       setTimeout(() => shoot.remove(), (dur + delay) * 1000 + 200);
     }
+  }
+
+  // Song effects and an idle popup end with the classic presentation, as the
+  // cinematic does. Their own removal timers then find detached nodes, and
+  // remove() on those is a no-op. A song class left on body would replay its
+  // strobe when the classic presentation returns.
+  function endTransientEffects() {
+    document.querySelectorAll('.chaewon-petal, .chaewon-star, .chaewon-shooting-star, .chaewon-laser-stage, .chaewon-laser-dim, .chaewon-idle-popup')
+      .forEach(el => el.remove());
+    for (const name of TRIGGERS) document.body.classList.remove(`chaewon-egg-${name}`);
   }
 
   function spawnLasers() {
@@ -675,12 +748,13 @@
     const img = document.querySelector('img[src*="headshot"]');
     if (!img) return;
     img.classList.add('chaewon-headshot');
-    // Wrap the img if not already wrapped, so we can position the sticker
-    if (!img.parentNode.classList.contains('chaewon-headshot-wrap')) {
+    // Keep picture sources beside the img while positioning the sticker.
+    const portrait = img.parentNode.tagName === 'PICTURE' ? img.parentNode : img;
+    if (!portrait.parentNode.classList.contains('chaewon-headshot-wrap')) {
       const wrap = document.createElement('span');
       wrap.className = 'chaewon-headshot-wrap';
-      img.parentNode.insertBefore(wrap, img);
-      wrap.appendChild(img);
+      portrait.parentNode.insertBefore(wrap, portrait);
+      wrap.appendChild(portrait);
       const sticker = document.createElement('span');
       sticker.className = 'chaewon-headshot-sticker';
       sticker.textContent = '❤';
@@ -695,7 +769,8 @@
     const img = wrap.querySelector('img');
     if (img) {
       img.classList.remove('chaewon-headshot');
-      wrap.parentNode.insertBefore(img, wrap);
+      const portrait = wrap.querySelector('picture') || img;
+      wrap.parentNode.insertBefore(portrait, wrap);
     }
     wrap.remove();
   }
@@ -809,7 +884,18 @@
     if (!text) return null;
     return HEADING_TRANSLATIONS[text.trim().toLowerCase()] || null;
   }
+  let _headingsAttached = false;
+  // Every translated heading's text node, so hideLegacy can undo a hover that
+  // mouseleave (gated on state.active) will no longer undo.
+  const _headingSwaps = [];
+  function restoreHeadings() {
+    for (const { textNode, original, translated } of _headingSwaps) {
+      if (textNode.textContent === translated) textNode.textContent = original;
+    }
+  }
   function attachHeadingTranslations() {
+    if (_headingsAttached) return;
+    _headingsAttached = true;
     document.querySelectorAll('h1, h2, h3, h4').forEach(h => {
       // Find the first non-whitespace text node child. We swap ONLY that node
       // so any child elements (e.g. the SMC re-open button inside index.html's
@@ -827,6 +913,7 @@
       if (!translated) return;
       h.dataset.chaewonOriginal = original;
       h.dataset.chaewonTranslated = translated;
+      _headingSwaps.push({ textNode, original, translated });
       h.addEventListener('mouseenter', () => {
         if (state.active) textNode.textContent = translated;
       });
@@ -847,17 +934,28 @@
     _idleTimer = setTimeout(fireIdlePopup, 30000);
   }
   async function fireIdlePopup() {
+    _idleTimer = null;
+    if (!state.active) return;
     _idleFired = true;
     sessionStorage.setItem('chaewonIdleFired', '1');
+    const generation = _assetGeneration;
     const manifest = await loadManifest();
-    const photo = manifest.bubbles.length ? pickRandom(manifest.bubbles, 1)[0] : null;
+    if (!state.active) return;
+    const photo = generation === _assetGeneration && manifest.bubbles.length
+      ? pickRandom(manifest.bubbles, 1)[0] : null;
     const line = IDLE_LINES[Math.floor(Math.random() * IDLE_LINES.length)];
     const el = document.createElement('div');
     el.className = 'chaewon-idle-popup';
-    el.innerHTML = `
-      ${photo ? `<img src="${assetUrl(photo.file)}" alt="${photo.alt || 'chaewon'}">` : ''}
-      <div class="chaewon-idle-text">${line}</div>
-    `;
+    if (photo) {
+      const img = document.createElement('img');
+      img.alt = photo.alt || 'chaewon';
+      img.src = assetUrl(photo.file);
+      el.appendChild(img);
+    }
+    const text = document.createElement('div');
+    text.className = 'chaewon-idle-text';
+    text.textContent = line;
+    el.appendChild(text);
     document.body.appendChild(el);
     setTimeout(() => el.classList.add('chaewon-idle-leaving'), 4000);
     setTimeout(() => el.remove(), 4600);
@@ -866,70 +964,15 @@
     resetIdleTimer();
   }
 
-  // ---------- Mobile 5-heart treasure hunt (§4.2) ----------
-  // Touch-only activation path: five subtle hearts revealed one at a time; tapping
-  // the 5th turns on Chaewon Mode. Desktop (pointer: fine) never sees them.
-  // Progress persists in sessionStorage so the hunt survives page navigation.
-  const HUNT_TOTAL = 5;
-  const _isTouch = !!(window.matchMedia &&
-    window.matchMedia('(hover: none) and (pointer: coarse)').matches);
-  let _huntEls = [];
-
-  function huntAnchors() {
-    const main = document.querySelector('main');
-    if (!main) return [];
-    const blocks = [...main.querySelectorAll('p, h2, h3, li')];
-    if (!blocks.length) return [];
-    const at = f => blocks[Math.min(blocks.length - 1, Math.floor(blocks.length * f))];
-    return [at(0.05), at(0.25), at(0.45), at(0.7), at(0.92)];
-  }
-
-  function initHunt(force) {
-    if ((!_isTouch && !force) || state.active) return;
-    showHuntHeart();
-  }
-
-  function showHuntHeart() {
-    removeHuntHearts();
-    const progress = getHuntProgress();
-    if (progress >= HUNT_TOTAL) return;
-    const anchor = huntAnchors()[progress];
-    if (!anchor) return; // no suitable spot on this page
-    const heart = document.createElement('span');
-    heart.className = 'chaewon-easter-heart';
-    heart.textContent = '♡';
-    heart.setAttribute('role', 'button');
-    heart.setAttribute('tabindex', '0');
-    heart.setAttribute('aria-label', 'hidden heart');
-    heart.addEventListener('click', onHuntTap);
-    anchor.appendChild(heart);
-    _huntEls.push(heart);
-  }
-
-  function onHuntTap(e) {
-    e.stopPropagation();
-    const next = getHuntProgress() + 1;
-    setHuntProgress(next);
-    removeHuntHearts();
-    if (next >= HUNT_TOTAL) {
-      activate();          // 5th heart -> Chaewon Mode (cinematic on first-ever)
-    } else {
-      showHuntHeart();
-    }
-  }
-
-  function removeHuntHearts() {
-    _huntEls.forEach(h => h.remove());
-    _huntEls = [];
-  }
-
-  window.ChaewonMode._initHunt = initHunt; // exposed for tests
-
   // ---------- Init ----------
   function init() {
-    if (isStoredActive()) {
-      activate({ skipCinematic: true });
-    }
+    // Listeners register whatever the starting pointer: a page that starts
+    // touch-first can switch to a fine pointer later, and activate() checks live.
+    if (isTouchFirst()) clearStoredActive();
+    else if (isStoredActive()) activate({ skipCinematic: true });
+    // Leave the mode if the device becomes touch-first, live or on a cache restore.
+    touchQuery?.addEventListener?.('change', event => { if (event.matches) deactivate(); });
+    window.addEventListener('pageshow', () => { if (isTouchFirst()) deactivate(); });
     document.addEventListener('keydown', handleKeydown);
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('click', handleClickBurst);
@@ -937,13 +980,14 @@
     document.addEventListener('keydown', handleAnyActivity);
     document.addEventListener('scroll', handleAnyActivity);
     document.addEventListener('touchstart', handleAnyActivity);
-    attachHeadingTranslations();
-    initHunt();   // touch-only; no-op on desktop or once active
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
+  // Pages load this script with defer, so it runs before DOMContentLoaded. Waiting
+  // for that event lets the homepage attach its concert first, so a stored session
+  // never flashes the legacy decorations on the entrance.
+  if (document.readyState === 'complete') {
     init();
+  } else {
+    document.addEventListener('DOMContentLoaded', init);
   }
 })();

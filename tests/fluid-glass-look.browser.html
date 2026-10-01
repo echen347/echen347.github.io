@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fluid glass look comparison</title>
+<!--
+MIT License
+Copyright (c) 2017 Pavel Dobryakov
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+-->
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 22px; color: #dce9ed; background: #080d14; font: 14px/1.5 system-ui, sans-serif; }
+  h1 { margin: 0 0 7px; font-size: 22px; font-weight: 550; }
+  p { margin: 0 0 18px; color: #a7bac3; }
+  main { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 480px), 1fr)); gap: 18px; }
+  article { min-width: 0; padding: 12px; border: 1px solid #263a48; background: #101923; }
+  h2 { margin: 0 0 10px; font-size: 16px; font-weight: 550; }
+  figure { margin: 0 0 12px; }
+  figure:last-child { margin-bottom: 0; }
+  figure canvas { display: block; width: 100%; aspect-ratio: 16 / 9; background: #02060b; }
+  figcaption { margin: 5px 0 0; color: #a7bac3; }
+  output { display: block; min-height: 22px; color: #a7bac3; font-variant-numeric: tabular-nums; }
+  #status { margin: 18px 0 0; white-space: pre-wrap; font-variant-numeric: tabular-nums; }
+  #runner { position: fixed; left: -10000px; top: 0; width: 480px; height: 270px; }
+</style>
+<h1>Fluid glass look comparison</h1>
+<p>One seeded simulation, one S-shaped pointer stroke, and 120 fixed coast ticks per treatment. Compare the initial pause with the scene after two seconds of free flow. Appearance has no automatic pass threshold.</p>
+<main id="cards"></main>
+<p id="status" role="status">Preparing renderer…</p>
+<canvas id="runner" aria-hidden="true"></canvas>
+<script>
+(async () => {
+  // Exact production Glass display block before the optical-surface change.
+  const previousDisplay = `uniform sampler2D dye;
+      uniform sampler2D bloom;
+      uniform sampler2D wideBloom;
+      uniform vec2 texel;
+      uniform int glass;
+      uniform float glowStrength;
+      void main() {
+        vec3 pigment = max(texture(dye,uv).rgb,vec3(0));
+        float a = dot(pigment,vec3(0.25,0.55,0.20));
+        vec3 color = pigment;
+        if (glass == 1) {
+          float l = dot(texture(dye,uv-vec2(texel.x,0)).rgb,vec3(0.25,0.55,0.20));
+          float r = dot(texture(dye,uv+vec2(texel.x,0)).rgb,vec3(0.25,0.55,0.20));
+          float b = dot(texture(dye,uv-vec2(0,texel.y)).rgb,vec3(0.25,0.55,0.20));
+          float t = dot(texture(dye,uv+vec2(0,texel.y)).rgb,vec3(0.25,0.55,0.20));
+          vec2 grad = vec2(r-l,t-b);
+          vec3 normal = normalize(vec3(-grad*2.8,1.0));
+          float rim = pow(1.0-max(normal.z,0.0),1.5);
+          float gleam = pow(max(dot(normal,normalize(vec3(-0.35,0.55,0.75))),0.0),12.0);
+          color = pigment * (0.60+0.48*normal.z) + vec3(0.33,0.62,0.78)*rim*min(a*1.4,1.0);
+          color += vec3(0.62,0.82,0.90)*gleam*min(a*0.35,1.0);
+        }
+        color=max(color-vec3(.008),vec3(0));
+        color += glowStrength*(texture(bloom,uv).rgb * .24 + texture(wideBloom,uv).rgb * .40);
+        color += vec3(.0004,.0012,.0020);
+        color = vec3(1.0)-exp(-color*1.15);
+        color = pow(color,vec3(0.454545));
+        outColor = vec4(color,1);
+      }`;
+
+  const runner = document.getElementById('runner');
+  const cards = document.getElementById('cards');
+  const status = document.getElementById('status');
+  const frameCallbacks = new Map();
+  const variants = [
+    { key: 'previous', title: 'Previous Glass', baseline: true, material: 'glass' },
+    { key: 'candidate', title: 'Current Glass', baseline: false, material: 'glass' },
+    { key: 'ink', title: 'Ink control', baseline: false, material: 'ink' }
+  ];
+  const snapshots = [];
+  let clock = 0;
+  let nextFrameId = 1;
+  let source;
+
+  function requestFrame(callback) {
+    const id = nextFrameId++;
+    frameCallbacks.set(id, callback);
+    return id;
+  }
+  function cancelFrame(id) { frameCallbacks.delete(id); }
+  function createFactory(displayOverride) {
+    let variantSource = source;
+    if (displayOverride) {
+      const pattern = /display: `[\s\S]*?`(?=\s*\n\s*};)/g;
+      const matches = [...variantSource.matchAll(pattern)];
+      if (matches.length !== 1) throw new Error('Expected one production display shader, found ' + matches.length);
+      variantSource = variantSource.replace(pattern, () => 'display: `' + displayOverride + '`');
+    }
+    return new Function('requestAnimationFrame', 'cancelAnimationFrame', 'performance',
+      variantSource + '\nreturn window.FluidPrototype.create;')(
+        requestFrame, cancelFrame, { now: () => clock });
+  }
+  function pointer(x, y, type = 'pointermove') {
+    const rect = runner.getBoundingClientRect();
+    runner.dispatchEvent(new PointerEvent(type, {
+      pointerType: 'mouse', pointerId: 1, bubbles: true, isPrimary: true,
+      button: type === 'pointermove' ? -1 : 0, buttons: type === 'pointerup' ? 0 : 1,
+      clientX: rect.left + rect.width * x,
+      clientY: rect.top + rect.height * y
+    }));
+  }
+  function card(variant) {
+    const article = document.createElement('article');
+    const heading = document.createElement('h2');
+    heading.textContent = variant.title;
+    const views = {};
+    for (const [key, caption] of [['initial', 'Initial, paused'], ['evolved', 'S-curve, then 2 seconds of simulation']]) {
+      const figure = document.createElement('figure');
+      const canvas = document.createElement('canvas');
+      const label = document.createElement('figcaption');
+      label.textContent = caption;
+      figure.append(canvas, label);
+      views[key] = canvas;
+      article.append(figure);
+    }
+    article.prepend(heading);
+    const output = document.createElement('output');
+    article.append(output);
+    cards.append(article);
+    return { views, output };
+  }
+  function capture(destination, label) {
+    const gl = runner.getContext('webgl2');
+    if (gl.getError() !== gl.NO_ERROR) throw new Error('WebGL error before ' + label);
+    destination.width = runner.width;
+    destination.height = runner.height;
+    const context = destination.getContext('2d');
+    context.drawImage(runner, 0, 0);
+    if (gl.getError() !== gl.NO_ERROR) throw new Error('WebGL error after ' + label);
+  }
+  function checkState(variant, frames, interactions, dimensions) {
+    if (runner.dataset.state !== 'ready') throw new Error(variant.title + ' renderer is not ready');
+    if (runner.dataset.paused !== 'true') throw new Error(variant.title + ' did not pause');
+    if (runner.dataset.material !== variant.material) throw new Error(variant.title + ' material differs');
+    if (Number(runner.dataset.frames) !== frames) throw new Error(variant.title + ' tick count differs');
+    if (Number(runner.dataset.interactions) !== interactions) throw new Error(variant.title + ' interaction count differs');
+    const size = runner.width + 'x' + runner.height;
+    if (dimensions && size !== dimensions) throw new Error(variant.title + ' raster ' + size + ' differs from ' + dimensions);
+    return size;
+  }
+
+  try {
+    if (document.hidden) throw new Error('Open this comparison in a visible tab');
+    const response = await fetch('../studies/fluid-prototype.js', { cache: 'no-store' });
+    if (!response.ok) throw new Error('Could not load the production runtime');
+    source = await response.text();
+    const views = Object.fromEntries(variants.map(variant => [variant.key, card(variant)]));
+    let dimensions;
+    for (const variant of variants) {
+      if (frameCallbacks.size) throw new Error('Frame callbacks leaked between variants');
+      clock = 0;
+      const create = createFactory(variant.baseline ? previousDisplay : null);
+      const scene = create(runner, { paused: true, ambient: false, seed: 347 });
+      try {
+        scene.setMaterial(variant.material);
+        dimensions = checkState(variant, 0, 0, dimensions);
+        scene.render();
+        capture(views[variant.key].views.initial, variant.title + ' initial image');
+        scene.setPaused(false);
+        pointer(.15, .5, 'pointerdown');
+        for (let tick = 1; tick <= 160; tick++) {
+          if (tick <= 40) {
+            const t = tick / 40;
+            pointer(.15 + .70 * t, .5 + .22 * Math.sin(2 * Math.PI * t));
+          }
+          if (frameCallbacks.size !== 1) throw new Error(variant.title + ' expected one frame at tick ' + tick);
+          const [[id, callback]] = frameCallbacks.entries();
+          frameCallbacks.delete(id);
+          clock = tick * (1000 / 60);
+          callback(clock);
+          if (tick === 40) {
+            pointer(.85, .5, 'pointerup');
+            runner.dispatchEvent(new PointerEvent('pointerleave', { pointerType: 'mouse', pointerId: 1 }));
+          }
+          if (tick % 10 === 0) {
+            status.textContent = 'Rendering ' + variant.title + ': tick ' + tick + '/160';
+            await new Promise(resolve => setTimeout(resolve, 0));
+          }
+        }
+        scene.setPaused(true);
+        checkState(variant, 160, 41, dimensions);
+        if (frameCallbacks.size) throw new Error(variant.title + ' retained a frame while paused');
+        scene.render();
+        capture(views[variant.key].views.evolved, variant.title + ' evolved image');
+        views[variant.key].output.textContent = 'Seed 347 · 40 stroke ticks + 120 coast ticks · a press vortex and 40 pointer segments · ' + dimensions + ' raster · no WebGL errors';
+        snapshots.push({ key: variant.key, frames: Number(runner.dataset.frames), interactions: Number(runner.dataset.interactions), dimensions });
+      } finally {
+        scene.dispose();
+        frameCallbacks.clear();
+      }
+    }
+    if (snapshots.length !== 3 || snapshots.some(item => item.frames !== 160 || item.interactions !== 41 || item.dimensions !== dimensions)) {
+      throw new Error('Comparison scenes did not use identical seed and input schedules');
+    }
+    status.textContent = 'PASS · Identical seed 347, raster, 40 stroke ticks, 120 coast ticks, and 40 pointer segments; no WebGL errors. Judge appearance from the images.';
+    document.body.dataset.result = 'pass';
+  } catch (error) {
+    status.textContent = 'FAIL · ' + error.message;
+    document.body.dataset.result = 'fail';
+  }
+})();
+</script>
+</html>

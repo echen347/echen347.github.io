@@ -86,8 +86,9 @@ function fixture(options = {}) {
     cancelAnimationFrame() { frame = null; }, Math, structuredClone
   });
   const scene = window.FluidPrototype.create(canvas, { paused: true, ambient: false, ...options });
-  const move = (x, y = 250) => canvas.emit('pointermove', { pointerId: 1, pointerType: 'mouse', clientX: x, clientY: y });
-  return { scene, schema: window.FluidPrototype.tuningSchema, canvas, draws, allocations, clears, calls, move,
+  const down = (x, y = 250) => canvas.emit('pointerdown', { pointerId: 1, pointerType: 'mouse', clientX: x, clientY: y, button: 0, buttons: 1 });
+  const move = (x, y = 250) => canvas.emit('pointermove', { pointerId: 1, pointerType: 'mouse', clientX: x, clientY: y, buttons: 1 });
+  return { scene, schema: window.FluidPrototype.tuningSchema, canvas, draws, allocations, clears, calls, move, down,
     step(now = 16) { if (!frame) throw new Error('No animation frame scheduled'); const callback = frame; frame = null; callback(now); } };
 }
 
@@ -146,10 +147,10 @@ test('setTuning rejects invalid patches atomically', () => {
 
 test('tuning changes the next pointer stroke without recreating the scene', () => {
   const baseline = fixture({ paused: false });
-  baseline.move(100);baseline.move(200);
+  baseline.down(100);baseline.move(200);
   const app = fixture({ paused: false });
   app.scene.setTuning({ trailWidth: 2, dyeBrightness: 2.4, cursorForce: 2 });
-  app.move(100);app.move(200);
+  app.down(100);app.move(200);
   const splats=app.draws.filter(draw => draw.kind === 'splat').slice(-2);
   const base=baseline.draws.filter(draw => draw.kind === 'splat').slice(-2);
   assert.equal(splats.length, 2);
@@ -527,7 +528,7 @@ test('context loss stops input, reset, and tuning graphics work', () => {
   assert.equal(app.canvas.dataset.state,'error');
   assert.equal(errors.length,1);
   const draws=app.draws.length, allocations=app.allocations.length, uniforms=app.calls.uniforms;
-  app.move(100);app.move(200);
+  app.down(100);app.move(200);
   app.canvas.emit('keydown',{key:'ArrowRight'});
   app.scene.reset();
   app.scene.setTuning({glowStrength:1.3});

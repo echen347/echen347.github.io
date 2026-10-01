@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Fluid cursor emission checks</title>
+<style>
+  body { background: #101318; color: #dcecef; font: 14px/1.6 system-ui; padding: 24px; }
+  pre { white-space: pre-wrap; }
+</style>
+<h1>Fluid cursor emission checks</h1>
+<p>Production seed and bloom shaders run with controlled pigment, no ambient light, and no deformation.</p>
+<pre id="results">Running…</pre>
+<script>
+(async () => {
+  const output = document.getElementById('results');
+  const lines = [];
+  let passed = 0, total = 0;
+  function check(ok, label) {
+    total++;
+    passed += Number(ok);
+    lines.push((ok ? 'PASS ' : 'FAIL ') + label);
+  }
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 16;
+  const gl = canvas.getContext('webgl2');
+  try {
+    if (!gl || !gl.getExtension('EXT_color_buffer_float')) throw new Error('Floating-point WebGL2 unavailable');
+    const response = await fetch('../studies/fluid-prototype.js', { cache: 'no-store' });
+    if (!response.ok) throw new Error('Production shader source unavailable');
+    const source = await response.text();
+    const vertex = source.match(/const VERTEX = `([\s\S]*?)`;/)?.[1];
+    const header = source.match(/const HEADER = `([\s\S]*?)`;/)?.[1];
+    const seed = source.match(/seed:\s*`([\s\S]*?)`\s*,/)?.[1];
+    const bloom = source.match(/bloom:\s*`([\s\S]*?)`\s*,/)?.[1];
+    if (!vertex || !header || !seed || !bloom) throw new Error('Production seed or bloom shader unavailable');
+    function compile(type, code) {
+      const shader = gl.createShader(type);
+      gl.shaderSource(shader, code);
+      gl.compileShader(shader);
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(shader));
+      return shader;
+    }
+    function program(body) {
+      const value = gl.createProgram();
+      const v = compile(gl.VERTEX_SHADER, vertex), f = compile(gl.FRAGMENT_SHADER, header + body);
+      gl.attachShader(value, v);
+      gl.attachShader(value, f);
+      gl.linkProgram(value);
+      gl.deleteShader(v);
+      gl.deleteShader(f);
+      if (!gl.getProgramParameter(value, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(value));
+      return value;
+    }
+    function texture(color) {
+      const value = gl.createTexture();
+      const data = new Float32Array(16 * 16 * 4);
+      for (let i = 0; i < 16 * 16; i++) data.set([...color, 1], i * 4);
+      gl.bindTexture(gl.TEXTURE_2D, value);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, 16, 16, 0, gl.RGBA, gl.FLOAT, data);
+      return value;
+    }
+    function target() {
+      const value = { texture: texture([0, 0, 0]), framebuffer: gl.createFramebuffer() };
+      gl.bindFramebuffer(gl.FRAMEBUFFER, value.framebuffer);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, value.texture, 0);
+      if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error('Floating-point framebuffer incomplete');
+      return value;
+    }
+    function bind(programValue, name, slot, value) {
+      gl.activeTexture(gl.TEXTURE0 + slot);
+      gl.bindTexture(gl.TEXTURE_2D, value);
+      const place = gl.getUniformLocation(programValue, name);
+      if (place !== null) gl.uniform1i(place, slot);
+    }
+    function number(programValue, name, value) {
+      const place = gl.getUniformLocation(programValue, name);
+      if (place !== null) gl.uniform1f(place, value);
+    }
+    function integer(programValue, name, value) {
+      const place = gl.getUniformLocation(programValue, name);
+      if (place !== null) gl.uniform1i(place, value);
+    }
+    function draw(targetValue) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, targetValue.framebuffer);
+      gl.viewport(0, 0, 16, 16);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
+    function pixel(targetValue) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, targetValue.framebuffer);
+      const value = new Float32Array(4);
+      gl.readPixels(8, 8, 1, 1, gl.RGBA, gl.FLOAT, value);
+      return [...value.slice(0, 3)];
+    }
+    const seedProgram = program(seed), bloomProgram = program(bloom);
+    gl.bindVertexArray(gl.createVertexArray());
+    const zeroDeformation = texture([0, 0, 0]);
+    const composition = target(), bloomTarget = target();
+    let compositionMaterial=0;
+    function compose(color, glass) {
+      compositionMaterial=glass;
+      gl.useProgram(seedProgram);
+      bind(seedProgram, 'source', 0, texture(color));
+      bind(seedProgram, 'deformation', 1, zeroDeformation);
+      number(seedProgram, 'warp', 0);
+      number(seedProgram, 'aspect', 1);
+      number(seedProgram, 'phase', .37);
+      number(seedProgram, 'amount', 0);
+      integer(seedProgram, 'field', 0);
+      integer(seedProgram, 'glass', glass);
+      draw(composition);
+      return pixel(composition);
+    }
+    function bloomColor() {
+      gl.useProgram(bloomProgram);
+      bind(bloomProgram, 'dye', 0, composition.texture);
+      integer(bloomProgram, 'glass', compositionMaterial);
+      const place = gl.getUniformLocation(bloomProgram, 'texel');
+      if (place !== null) gl.uniform2f(place, 1 / 16, 1 / 16);
+      draw(bloomTarget);
+      return pixel(bloomTarget);
+    }
+    function bloomPeak() { return Math.max(...bloomColor()); }
+    function peak(color) { return Math.max(...color); }
+    const cyan = [.0144, .1512, .1416];
+    const orange = [.2736, .0864, .0216];
+    const cyanInk = compose(cyan, 0);
+    const orangeInk = compose(orange, 0);
+    check(cyan.every((value, index) => Math.abs(cyanInk[index] - value) < .001) &&
+      orange.every((value, index) => Math.abs(orangeInk[index] - value) < .001),
+      'Ink composition leaves both cursor pigments unchanged');
+    const emptyGlass = compose([0, 0, 0], 1);
+    check(emptyGlass.every(value => value === 0), 'Glass adds no emission without pigment');
+    const cyanGlass = compose(cyan, 1);
+    const cyanBloom = bloomPeak();
+    const orangeGlass = compose(orange, 1);
+    const orangeBloom = bloomPeak();
+    check(peak(cyanGlass) > .6 && peak(orangeGlass) > .6,
+      'Dense Glass pigment reaches bloom-ready radiance: cyan ' + peak(cyanGlass).toFixed(3) + ', orange ' + peak(orangeGlass).toFixed(3));
+    check(cyanBloom > .3 && orangeBloom > .3,
+      'Actual bloom shader receives emitted cursor light: cyan ' + cyanBloom.toFixed(3) + ', orange ' + orangeBloom.toFixed(3));
+    const cyanTail = cyan.map(value => value * .1);
+    const orangeTail = orange.map(value => value * .1);
+    const cyanTailGlass = compose(cyanTail, 1);
+    const orangeTailGlass = compose(orangeTail, 1);
+    const cyanCoreGain = peak(cyanGlass) / peak(cyan), cyanTailGain = peak(cyanTailGlass) / peak(cyanTail);
+    const orangeCoreGain = peak(orangeGlass) / peak(orange), orangeTailGain = peak(orangeTailGlass) / peak(orangeTail);
+    function boundedGain(gain) { return gain >= 3.95 && gain <= 7.05; }
+    check([cyanCoreGain, cyanTailGain, orangeCoreGain, orangeTailGain].every(boundedGain) &&
+      cyanCoreGain + .03 >= cyanTailGain && orangeCoreGain + .03 >= orangeTailGain,
+      'Core and tail gains stay within 4–7 and do not rise as pigment fades: cyan ' + cyanCoreGain.toFixed(2) + '/' + cyanTailGain.toFixed(2) + ', orange ' + orangeCoreGain.toFixed(2) + '/' + orangeTailGain.toFixed(2));
+    check(cyanGlass[1] > cyanGlass[2] && cyanGlass[2] > cyanGlass[0] &&
+      orangeGlass[0] > orangeGlass[1] && orangeGlass[1] > orangeGlass[2],
+      'Glass emission preserves cyan and orange channel ordering');
+    function luma(color) { return color[0] * .25 + color[1] * .55 + color[2] * .20; }
+    const palette = [
+      { name: 'cyan', color: cyan },
+      { name: 'blue', color: [.0216, .0600, .2016] },
+      { name: 'orange', color: orange },
+      { name: 'pearl', color: [.1368, .1824, .1968] }
+    ];
+    const levels = [1, .5, .25, .125];
+    const sweep = palette.map(({ name, color }) => ({
+      name,
+      color,
+      samples: levels.map(level => {
+        const aged = color.map(channel => channel * level);
+        const ink = compose(aged, 0);
+        const glass = compose(aged, 1);
+        return { level, inkPeak: peak(ink), inkLuma: luma(ink), glassPeak: peak(glass), glassLuma: luma(glass), gain: luma(glass) / luma(ink), glass };
+      })
+    }));
+    for (const { name, color, samples } of sweep) {
+      check(samples[2].gain >= samples[0].gain * .5,
+        name + ' at quarter strength retains at least half its fresh emission gain (' + samples[2].gain.toFixed(2) + ' / ' + samples[0].gain.toFixed(2) + ')');
+      check(samples.every(sample => boundedGain(sample.gain)) &&
+        samples.slice(1).every((sample, index) => sample.gain <= samples[index].gain + .03),
+        name + ' aged gain stays within 4–7 and does not exceed a younger sample');
+      const order = [0, 1, 2].sort((a, b) => color[b] - color[a]);
+      check(samples[0].glass[order[0]] > samples[0].glass[order[1]] &&
+        samples[0].glass[order[1]] > samples[0].glass[order[2]] &&
+        samples.every(sample => Number.isFinite(sample.glassPeak) && Number.isFinite(sample.glassLuma)),
+        name + ' dense emission remains finite and preserves hue order');
+      compose(color.map(v=>v*.125),1);
+      const agedBloom=bloomColor();
+      check(peak(agedBloom)>.005 && agedBloom.every(Number.isFinite),
+        name+' keeps a halo after falling below the old bloom threshold');
+      const ratios=agedBloom.map((v,i)=>v/color[i]);
+      check(Math.max(...ratios)-Math.min(...ratios)<.003,
+        name+' faint halo preserves pigment channel ratios');
+    }
+    compose([0,0,0],1);
+    check(bloomPeak()===0,'Empty Glass emits no bloom');
+    compose([.4,.2,.1],0);
+    const inkBloom=bloomColor();
+    check(Math.abs(inkBloom[0]-.1)<.001 && inkBloom[1]===0 && inkBloom[2]===0,
+      'Ink keeps its original bloom response');
+    compose([.00001,.00002,.00003],1);
+    check(bloomPeak()<.000001,'Near-black Glass halo vanishes without a persistent floor');
+    lines.push('');
+    lines.push('Density sweep, production seed shader (default pointer PALETTE × 0.24):');
+    lines.push('color   level   Ink peak/luma   Glass peak/luma   Glass÷Ink luma');
+    for (const { name, samples } of sweep) for (const sample of samples) {
+      lines.push(name.padEnd(7) + ' ' + sample.level.toFixed(3).padStart(5) + '   ' +
+        sample.inkPeak.toFixed(3).padStart(5) + '/' + sample.inkLuma.toFixed(3).padStart(5) + '      ' +
+        sample.glassPeak.toFixed(3).padStart(5) + '/' + sample.glassLuma.toFixed(3).padStart(5) + '          ' +
+        sample.gain.toFixed(3));
+    }
+    check(gl.getError() === gl.NO_ERROR, 'Emission and bloom draws have no WebGL errors');
+  } catch (error) {
+    check(false, error.message);
+  }
+  gl?.getExtension('WEBGL_lose_context')?.loseContext();
+  output.textContent = lines.join('\n') + '\n' + passed + '/' + total + ' passed';
+  output.dataset.state = passed === total ? 'passed' : 'failed';
+})();
+</script>
+</html>

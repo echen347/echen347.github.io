@@ -50,14 +50,14 @@ body[data-view="scene"] #scene-layer {
   left: max(36px, env(safe-area-inset-left));
   right: max(36px, env(safe-area-inset-right));
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
   pointer-events: none;
   color: #b7c7cd;
   font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 .scene-actions { display: flex; align-items: center; gap: 24px; }
-#scene-pause, #scene-reset {
+#scene-reset {
   min-width: 44px;
   min-height: 44px;
   padding: 0 4px;
@@ -69,8 +69,7 @@ body[data-view="scene"] #scene-layer {
   cursor: pointer;
   pointer-events: auto;
 }
-#scene-pause:disabled { cursor: default; }
-#scene-pause:hover:not(:disabled), #scene-reset:hover { color: var(--scene-pearl); }
+#scene-reset:hover { color: var(--scene-pearl); }
 #site-header {
   position: relative;
   z-index: 2;

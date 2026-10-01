@@ -79,7 +79,10 @@ const cases = [
   { name: 'desktop', width: 1600, height: 900, dpr: 1,
     raster: [1600, 900], solver: [341, 192], dye: [1365, 768] },
   { name: 'portrait high-density display', width: 390, height: 844, dpr: 2,
-    raster: [585, 1266], solver: [144, 311], dye: [504, 1090] }
+    raster: [585, 1266], solver: [144, 311], dye: [504, 1090] },
+  // The 1.6-million-pixel display cap binds here: without it the raster would be 2205x1434.
+  { name: 'laptop high-density display at the display pixel cap', width: 1470, height: 956, dpr: 2,
+    raster: [1568, 1020], solver: [295, 192], dye: [1180, 768] }
 ];
 
 for (const configuration of cases) {
@@ -91,6 +94,7 @@ for (const configuration of cases) {
     const display = app.draws.filter(draw => draw.output === null).at(-1);
     assert.ok(lighting && velocitySeed && display, 'The renderer executes light, velocity, and display passes');
     assert.deepEqual([app.canvas.width, app.canvas.height], configuration.raster, 'Keep the existing display pixel budget');
+    assert.ok(app.canvas.width * app.canvas.height <= 1600000, 'The display raster stays within 1.6 million pixels');
     assert.deepEqual(dimensions(velocitySeed.output), configuration.solver, 'Keep the velocity solver resolution');
     const pressure = app.draws.filter(draw => draw.uniforms.pressure !== undefined && draw.uniforms.divergence !== undefined);
     assert.ok(pressure.length > 0, 'The pressure solver executes');

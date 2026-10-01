@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chaewon concert checks</title>
+<style>
+  body { margin: 0; padding: 24px; background: #101318; color: #e5edf2; font: 14px/1.6 system-ui; }
+  iframe { display: block; width: 1100px; height: 720px; border: 1px solid #46505b; }
+  li[data-pass="false"] { color: #ff9999; }
+  li[data-pass="true"] { color: #93dab3; }
+</style>
+<h1>Chaewon concert checks</h1>
+<p>Serve the repository root and open this page with a fine pointer. Coarse-pointer behavior is covered by the Node suite and device emulation.</p>
+<ol id="results"></ol>
+<p id="summary">Running…</p>
+<div id="fixtures"></div>
+<script>
+(async () => {
+  let passed = 0, failed = 0, loads = 0, frame;
+  const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const check = (condition, label) => {
+    const item = document.createElement('li');
+    item.dataset.pass = String(Boolean(condition));
+    item.textContent = `${condition ? 'PASS' : 'FAIL'}: ${label}`;
+    document.querySelector('#results').append(item);
+    condition ? passed++ : failed++;
+  };
+  const until = async (predicate, label, timeout = 8000) => {
+    const started = performance.now();
+    while (!predicate() && performance.now() - started < timeout) await wait(50);
+    if (!predicate()) throw new Error(label);
+  };
+  const load = (url, width = 1100) => new Promise((resolve, reject) => {
+    frame?.remove();
+    // Each group starts outside Chaewon Mode, with the legacy reveal already seen.
+    sessionStorage.clear();
+    localStorage.setItem('chaewonModeFirstSeen', '1');
+    frame = document.createElement('iframe');
+    frame.style.width = `${width}px`;
+    const timer = setTimeout(() => reject(new Error(`${url} did not load`)), 15000);
+    frame.onload = () => { clearTimeout(timer); resolve(frame); };
+    const destination = new URL(url, window.location.href);
+    destination.searchParams.set('check', `${Date.now()}-${++loads}`);
+    frame.src = destination.href;
+    document.querySelector('#fixtures').append(frame);
+  });
+  const group = async (name, run) => {
+    try { await run(); }
+    catch (error) { check(false, `${name}: ${error.message}`); }
+    finally { frame?.remove(); frame = null; }
+  };
+  const page = () => frame.contentDocument;
+  const win = () => frame.contentWindow;
+  const type = text => {
+    for (const key of text) page().dispatchEvent(new (win().KeyboardEvent)('keydown', { key, bubbles: true }));
+  };
+  const cards = () => [...page().querySelectorAll('.chaewon-concert .card')];
+  const legacy = () => page().body.classList.contains('chaewon-mode');
+  const decorations = () => page().querySelector('.chaewon-marquee, .chaewon-exit, #chaewon-bubbles');
+  const sceneReady = async () => {
+    await until(() => Number(page().querySelector('#fluid-canvas')?.dataset.frames || 0) > 20, 'Scene frames');
+  };
+  const visible = element => {
+    const style = win().getComputedStyle(element);
+    return element.getClientRects().length > 0 && style.display !== 'none' && style.visibility !== 'hidden' &&
+      !element.closest('[hidden], [inert]');
+  };
+  // A card counts as shown only inside a visible concert layer. Single cards near the
+  // wrap edge go visibility:hidden on purpose, so visibility is checked on the layer.
+  const layerShown = () => { const layer = page().querySelector('.chaewon-concert'); return !!layer && visible(layer); };
+  const shown = () => layerShown() ? page().querySelectorAll('.chaewon-concert .card.is-shown').length : 0;
+  const footerIsResetOnly = label => {
+    const footer = page().querySelector('.scene-footer');
+    const actions = [...footer.querySelectorAll('button, a')].filter(visible);
+    check(actions.length === 1 && actions[0].id === 'scene-reset', `${label}: Reset is the only production footer action`);
+    check(!/Preview:|type chaewon|Leave the concert|Lit for/i.test(footer.innerText),
+      `${label}: footer has no preview invitation or visible cue`);
+  };
+
+  await group('Entrance lifecycle', async () => {
+    await load('../?seed=416238#scene');
+    await sceneReady();
+    footerIsResetOnly('Concert inactive');
+    check(cards().length === 0, 'No cards before the trigger');
+    type('chaewon');
+    await until(() => cards().length === 3, 'Cards placed');
+    const unseen = cards().filter(card => !card.classList.contains('is-shown'));
+    check(unseen.length > 0 && unseen.every(card => {
+      const r = card.getBoundingClientRect();
+      return page().elementFromPoint((r.left + r.right) / 2, (r.top + r.bottom) / 2) === page().querySelector('#fluid-canvas');
+    }), 'A card that has not surfaced lets clicks reach the scene');
+    await until(() => shown() === 3, 'Three cards surface');
+    check(page().querySelectorAll('.chaewon-concert').length === 1 && layerShown(), 'One visible concert layer');
+    check(page().querySelectorAll('canvas').length === 1, 'One renderer canvas');
+    check(!legacy() && !decorations(), 'No legacy marquee, exit button, or bubbles alongside the cards');
+    const status = page().querySelector('.chaewon-concert-status');
+    check(status?.textContent === 'Lit for Chaewon' && !status.closest('.scene-footer'), 'Cue announced outside the footer');
+    footerIsResetOnly('Concert active');
+    type('crazy');
+    await wait(100);
+    // tests/chaewon/concert-controller.test.js checks the relight itself.
+    check(status.textContent === 'Lit for Crazy', 'A song cue is announced');
+
+    // Forward card: resize, keep its face, and Escape returns it without leaving the scene.
+    const card = cards()[1];
+    card.click();
+    await wait(700);
+    card.click();
+    await wait(800);
+    check(card.classList.contains('is-flipped'), 'The card turns over');
+    check(win().getComputedStyle(card.querySelector('.card-back')).counterReset === 'theorem 0 definition 0',
+      'The card back restarts the theorem and definition counters');
+    check(status.textContent.startsWith('Theorem. ') && card.getAttribute('aria-label').startsWith(status.textContent),
+      'Turning the card announces its back');
+    frame.style.width = '320px';
+    await wait(900);
+    const rect = card.getBoundingClientRect();
+    check(rect.left >= 0 && rect.top >= 0 && rect.right <= win().innerWidth && rect.bottom <= win().innerHeight,
+      'The forward card stays reachable at 320 pixels');
+    check(card.classList.contains('is-flipped'), 'The resize keeps the card face');
+    const inside = element => {
+      const r = element.getBoundingClientRect();
+      return r.left >= -.5 && r.top >= -.5 && r.right <= win().innerWidth + .5 && r.bottom <= win().innerHeight + .5;
+    };
+    frame.style.width = '600px';
+    await wait(900);
+    check(inside(card), 'The forward card stays reachable at 600 pixels');
+    check(cards().filter(other => other !== card && win().getComputedStyle(other).visibility !== 'hidden').every(other => {
+      const r = other.getBoundingClientRect(), cx = (r.left + r.right) / 2;
+      return cx >= 0 && cx <= win().innerWidth;
+    }), 'Resting cards stay on screen at 600 pixels');
+    frame.style.width = '1100px';
+    frame.style.height = '420px';
+    await wait(900);
+    const short = card.getBoundingClientRect();
+    check(inside(card) && short.height <= 420 - 32 + .5, 'The forward card shrinks to fit a 420 pixel window');
+    frame.style.height = '720px';
+    frame.style.width = '320px';
+    await wait(900);
+    card.focus();
+    // Real key presses are cancelable; the homepage's Escape handler honors defaultPrevented.
+    card.dispatchEvent(new (win().KeyboardEvent)('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    await wait(700);
+    check(!card.classList.contains('is-forward'), 'Escape returns the card');
+    check(page().body.dataset.view === 'scene', 'Escape with a forward card does not switch to Paper');
+    check(page().activeElement === card, 'Focus stays on the returned card');
+    frame.style.width = '1100px';
+    await wait(500);
+
+    // Reset keeps the concert and rebuilds its cards once.
+    const seed = page().querySelector('#fluid-canvas').dataset.seed;
+    page().querySelector('#scene-reset').click();
+    await until(() => shown() === 3 && page().querySelector('#fluid-canvas').dataset.seed !== seed, 'Cards after Reset');
+    check(cards().length === 3 && page().querySelectorAll('.chaewon-concert').length === 1, 'Reset rebuilds one card set');
+
+    type('chaewon');
+    await until(() => cards().length === 0, 'Cards leave');
+    check(!layerShown() && !legacy() && !decorations(), 'Leaving hides the concert layer and shows no legacy decorations');
+    footerIsResetOnly('After leaving');
+    check(win().sessionStorage.getItem('chaewonMode') === null, 'The mode flag is cleared');
+  });
+
+  await group('Scene and Paper hand off the mode', async () => {
+    await load('../?seed=416238#scene');
+    await sceneReady();
+    type('chaewon');
+    await until(() => shown() === 3, 'Cards in the scene');
+    page().querySelector('#view-toggle').click();
+    await wait(400);
+    check(page().body.dataset.view === 'profile', 'Paper view');
+    check(cards().length === 0, 'Paper has no concert cards');
+    check(legacy(), 'Paper keeps the existing Chaewon Mode');
+    page().querySelector('#view-toggle').click();
+    await until(() => shown() === 3, 'Cards return with the scene');
+    check(layerShown() && !legacy() && !decorations(), 'The scene shows the concert, not the legacy decorations');
+    type('chaewon');
+    await until(() => cards().length === 0, 'Exit');
+  });
+
+  await group('Scene from scrolled Paper keeps the cards below the header', async () => {
+    await load('../?seed=416238#profile');
+    type('chaewon');
+    await wait(300);
+    check(legacy(), 'Paper shows the classic mode');
+    win().scrollTo({ top: 300, behavior: 'instant' });
+    check(win().scrollY > 200, 'Paper is scrolled');
+    // A scripted click switches without scrolling the toggle into view, as Back and Forward do.
+    page().querySelector('#view-toggle').click();
+    await until(() => shown() === 3, 'Cards in the scene');
+    await wait(1500);
+    const header = page().querySelector('#site-header').getBoundingClientRect().bottom;
+    const tops = cards().map(card => Math.round(card.getBoundingClientRect().top));
+    check(win().scrollY === 0 && tops.every(top => top >= header), `Every card starts below the header (${header}px): ${tops.join(', ')}`);
+    type('chaewon');
+    await until(() => cards().length === 0, 'Exit');
+  });
+
+  await group('Content pages keep the legacy mode', async () => {
+    await load('../profile.html?view=scene&seed=812736');
+    await wait(800);
+    type('chaewon');
+    await wait(300);
+    check(legacy(), 'Profile shows the legacy mode');
+    check(!page().querySelector('.chaewon-concert'), 'No concert on content pages');
+    type('chaewon');
+    await wait(200);
+    check(!legacy(), 'The legacy mode leaves');
+  });
+
+  document.querySelector('#summary').textContent = `${passed} passed, ${failed} failed`;
+  document.body.dataset.result = failed ? 'failed' : 'passed';
+})();
+</script>

@@ -46,6 +46,7 @@ SOFTWARE.
       uniform float warp;
       uniform float aspect;
       uniform float phase;
+      uniform float streamTime;
       uniform float amount;
       uniform int field;
       uniform int glass;
@@ -54,6 +55,16 @@ SOFTWARE.
       uniform vec3 tintA;
       uniform vec3 tintB;
       uniform vec3 tintMist;
+      uniform float moodOn;
+      uniform vec3 coreShift;
+      uniform vec3 moodA;
+      uniform vec3 moodB;
+      uniform vec3 moodMist;
+      uniform vec3 moodCore;
+      uniform vec3 moodEdge;
+      uniform float moodFront;
+      uniform float moodWidth;
+      uniform vec2 moodDir;
       uniform float flowSpeed;
       uniform vec2 flowScale;
       // Cubic reconstruction keeps the strand tangent smooth across solver cells.
@@ -75,6 +86,10 @@ SOFTWARE.
       float noise(vec2 p) {
         vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
         return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+1.0),f.x),f.y);
+      }
+      float filteredNoise(vec2 coordinate) {
+        float footprint=max(length(dFdx(coordinate)),length(dFdy(coordinate)));
+        return mix(noise(coordinate),.5,smoothstep(.30,.80,footprint));
       }
       float sinc(float x) {
         return abs(x)<.001 ? 1.0-x*x/6.0 : sin(x)/x;
@@ -133,6 +148,13 @@ SOFTWARE.
           p+=mat2(cos(angle),-sin(angle),sin(angle),cos(angle))*shift;
         }
         vec3 light=vec3(0);
+        // The front uses transported coordinates, so it bends around vortices.
+        float frontCoord=dot(p,moodDir);
+        // Every mood uniform is neutral at zero, so code that compiles this shader
+        // without the concert (tests, tools) renders the stock light.
+        float mood=moodOn*(1.0-smoothstep(moodFront-moodWidth,moodFront+moodWidth,frontCoord));
+        float frontDistance=(frontCoord-moodFront)/max(moodWidth,1e-3);
+        float edgeGlow=moodOn*exp(-frontDistance*frontDistance);
         for(int i=0;i<3;i++) {
           float j=float(i);
           float curveIndex=flowSpeed>0.0?1.0:j;
@@ -148,12 +170,24 @@ SOFTWARE.
           vec2 footprint=vec2(dFdx(strand),dFdy(strand));
           float line=filteredPulse(strand,footprint,10);
           float core=filteredPulse(strand,footprint,30);
+          // Texture travels along each material strand, like orbiting disk light.
+          // The strand geometry and fluid history do not depend on this clock.
+          float lane=strand/6.2831853;
+          float along=q.x-streamTime*.14*(.85+.15*cos(lane*.06));
+          float streaming=.68*filteredNoise(vec2(along*6.0+phase*.16,lane*.08))+
+            .32*filteredNoise(vec2(along*15.0+8.3,lane*.045+3.7));
           // Continuous amplitude avoids brightness jumps between adjacent strands.
-          float pulse=flowSpeed>0.0 ? .32+.24*noise(vec2(q.x*1.4+phase*.16,strand/6.2831853*.71)) :
+          float pulse=flowSpeed>0.0 ? .32+.24*streaming :
             .18+.82*pow(noise(vec2(q.x*4.0+phase*.4,strand/6.2831853*.71+j*5.0)),2.0);
           vec3 tint=mix(tintA,tintB,smoothstep(-.35,.40,q.x+.22*sin(phase)));
           tint=mix(tint,tintMist,.16+.14*sin(j*2.4));
+          vec3 moodTint=mix(moodA,moodB,smoothstep(-.35,.40,q.x+.22*sin(phase)));
+          moodTint=mix(moodTint,moodMist,.16+.14*sin(j*2.4));
+          tint=mix(tint,moodTint,mood);
           light+=sheet*pulse*(tint*(.018+line*4.0)+vec3(.92,.91,.85)*core*1.5);
+          // Concert: move the strand core from stock (plus a committed shift) toward the mood core.
+          light+=sheet*pulse*mix(coreShift,moodCore-vec3(.92,.91,.85),mood)*core*1.5;
+          light+=sheet*edgeGlow*moodEdge*(.25+line*2.5);
         }
         vec3 wake=max(texture(source,uv).rgb,vec3(0));
         if(glass==1) {
@@ -163,6 +197,8 @@ SOFTWARE.
           wake*=emission;
         }
         outColor=vec4(wake+light*amount,1);
+        // Composition alpha is never read by the stock passes; the display uses it as the mood mask.
+        if(moodOn>0.0) outColor.a=mood;
       }`,
     splat: `uniform sampler2D source;
       uniform vec2 point;
@@ -199,6 +235,32 @@ SOFTWARE.
         }
         vec3 ink=mix(startColor,color,colorAlong);
         outColor = texture(source, uv) + vec4(ink*max(weight,0.0),0.0);
+      }`,
+    vortex: `uniform sampler2D source;
+      uniform vec2 center;
+      uniform vec2 velocityScale;
+      uniform float aspect;
+      uniform float radius;
+      uniform float spin;
+      uniform float velocityPass;
+      uniform vec3 color;
+      void main() {
+        vec2 d=(uv-center)*vec2(aspect,1.0)/radius;
+        float r2=dot(d,d);
+        vec4 previous=texture(source,uv);
+        if(velocityPass>0.5) {
+          // A radial falloff times the perpendicular radius is divergence-free.
+          // Convert physical screen velocity to the solver's texel units.
+          vec2 swirl=vec2(-d.y,d.x)*exp(-r2)*spin*velocityScale;
+          outColor=previous+vec4(swirl,0,0);
+        } else {
+          // A soft crescent makes a click visible even away from the white sheet.
+          // It enters dye history once, then the solver rolls it into the vortex.
+          float edge=(sqrt(r2)-.52)/.24;
+          float crescent=exp(-edge*edge);
+          crescent*=.16+.84*smoothstep(-.6,.8,d.x);
+          outColor=previous+vec4(color*crescent,0);
+        }
       }`,
     deformation: `uniform sampler2D source;
       uniform sampler2D velocity;
@@ -386,6 +448,11 @@ SOFTWARE.
       uniform vec2 surfaceTexel;
       uniform int glass;
       uniform float glowStrength;
+      uniform float moodOn;
+      uniform vec3 coolShift;
+      uniform vec3 warmShift;
+      uniform vec3 moodCool;
+      uniform vec3 moodWarm;
       void main() {
         vec3 pigment = max(texture(dye,uv).rgb,vec3(0));
         vec3 color = pigment;
@@ -420,7 +487,9 @@ SOFTWARE.
           float reflectionCoverage=1.0-exp(-pow(thickness/.045,2.0));
           float cool=exp(-pow((reflected.x+.34)/.22,2.0)-pow((reflected.y-.58)/.65,2.0));
           float warm=exp(-pow((reflected.x-.55)/.16,2.0)-pow((reflected.y+.30)/.60,2.0));
-          vec3 reflection=vec3(.82,.95,1.08)*3.4*cool+vec3(1.1,.64,.36)*2.6*warm;
+          float moodMask=moodOn*clamp(texture(dye,uv).a,0.0,1.0);
+          vec3 reflection=mix(vec3(.82,.95,1.08)+coolShift,moodCool,moodMask)*3.4*cool+
+            mix(vec3(1.1,.64,.36)+warmShift,moodWarm,moodMask)*2.6*warm;
           // Smoothed surface normals extend beyond the visible fluid. Limit their
           // reflections by local material support without thresholding thin edges.
           float localHeight=1.0-exp(-dot(pigment,vec3(.25,.55,.20))*.65);
@@ -613,6 +682,16 @@ SOFTWARE.
       bindTexture(0,dye.read);
       use('splat',{source:0,point:[x,y],start,color:color.map(c=>c*tuning.dyeBrightness),startColor:startColor.map(c=>c*tuning.dyeBrightness),radius,aspect}); draw(dye.write); dye.swap();
     }
+    function injectVortex(x,y) {
+      const aspect=canvas.width/canvas.height, shortSide=Math.min(aspect,1);
+      const uniforms={source:0,center:[x,y],aspect,radius:.06*shortSide*tuning.trailWidth,
+        velocityScale:[simWidth/aspect*shortSide,simHeight*shortSide],spin:.5*tuning.cursorForce,
+        color:cursorColor(cursorDistance).map(value=>value*1.6*tuning.dyeBrightness)};
+      bindTexture(0,velocity.read);
+      use('vortex',{...uniforms,velocityPass:1}); draw(velocity.write); velocity.swap();
+      bindTexture(0,dye.read);
+      use('vortex',{...uniforms,velocityPass:0}); draw(dye.write); dye.swap();
+    }
     const PALETTE = [[0.06,0.63,0.59],[0.09,0.25,0.84],[1.14,0.36,0.09],[0.57,0.76,0.82]];
     const LIGHT_PALETTES = [
       [[.045,.31,.56],[1,.43,.12],[.54,.72,.82]],
@@ -623,6 +702,7 @@ SOFTWARE.
       [[.04,.37,.43],[1,.30,.20],[.82,.71,.69]]
     ];
     function chooseComposition() {
+      const previousStock=stockBaseline;
       randomState=seed;
       lightPhase=random()*6.28;
       lightStyle={waveA:[-.19,1,1],waveB:[.09,920,1],flowSpeed:0,
@@ -637,6 +717,14 @@ SOFTWARE.
           colors[1].map(v=>v*1.14),colors[2]];
       }
       canvas.dataset.seed=String(seed);
+      stockBaseline=stockLook();
+      if(look.front!==FRONT_IDLE) {
+        // An exit front heads for stock light; after a reset that is the new seed's.
+        if(previousStock&&sameLook(look.target,previousStock)) look.target=copyLook(stockBaseline);
+        lightStyle={...lightStyle,tintA:[...look.base.a],tintB:[...look.base.b],tintMist:[...look.base.mist]};
+        palette=look.target.palette.map(color=>[...color]);
+      } else if(look.override) applyLook(look.override);
+      else { look.base=copyLook(stockBaseline); look.target=copyLook(stockBaseline); }
     }
     function cursorColor(distance) {
       const phase=distance*2.4;
@@ -647,6 +735,7 @@ SOFTWARE.
     }
     function seedComposition() {
       chooseComposition();
+      streamTime=0;
       bindTexture(0,dye.read);
       const aspect=canvas.width/canvas.height, materialScale=Math.min(aspect,1);
       use('seed',{source:0,aspect,phase:lightPhase,amount:0,field:1,
@@ -654,7 +743,114 @@ SOFTWARE.
       draw(velocity.write); velocity.swap();
       for(let i=0;i<6;i++) simulation(1/120);
     }
-    let lightPhase=0;
+    let lightPhase=0, streamTime=0;
+    const STOCK_CORE=[.92,.91,.85], STOCK_COOL=[.82,.95,1.08], STOCK_WARM=[1.1,.64,.36];
+    const FRONT_START=-1.05, FRONT_END=1.05, FRONT_IDLE=-9;
+    const look={base:null,target:null,override:null,front:FRONT_IDLE,speed:0,width:.1,edge:[0,0,0],done:null};
+    // This seed's light without any mood; exit restores it after reset or resize.
+    let stockBaseline=null;
+    function copyLook(value) {
+      return {a:[...value.a],b:[...value.b],mist:[...value.mist],core:[...value.core],
+        cool:[...value.cool],warm:[...value.warm],palette:value.palette.map(color=>[...color])};
+    }
+    function stockLook() {
+      return copyLook({a:lightStyle.tintA,b:lightStyle.tintB,mist:lightStyle.tintMist,core:STOCK_CORE,
+        cool:STOCK_COOL,warm:STOCK_WARM,palette});
+    }
+    const sameLook=(x,y)=>JSON.stringify(x)===JSON.stringify(y);
+    function applyLook(value) {
+      look.base=copyLook(value); look.target=copyLook(value);
+      lightStyle={...lightStyle,tintA:[...value.a],tintB:[...value.b],tintMist:[...value.mist]};
+      palette=value.palette.map(color=>[...color]);
+    }
+    const shift=(value,stock)=>value.map((v,i)=>v-stock[i]);
+    // Uploaded in their own use() calls, so the stock compose and display calls keep their text.
+    function moodUniforms() {
+      const moving=look.front!==FRONT_IDLE;
+      return {moodOn:moving?1:0,coreShift:shift(look.base.core,STOCK_CORE),moodA:look.target.a,moodB:look.target.b,
+        moodMist:look.target.mist,moodCore:look.target.core,moodEdge:moving?look.edge:[0,0,0],
+        moodFront:look.front,moodWidth:look.width,moodDir:[1,0]};
+    }
+    function displayMoodUniforms() {
+      return {moodOn:look.front!==FRONT_IDLE?1:0,coolShift:shift(look.base.cool,STOCK_COOL),
+        warmShift:shift(look.base.warm,STOCK_WARM),moodCool:look.target.cool,moodWarm:look.target.warm};
+    }
+    function finishFront() {
+      const done=look.done;
+      look.override=copyLook(look.target); applyLook(look.override);
+      look.front=FRONT_IDLE; look.speed=0; look.done=null;
+      done?.();
+    }
+    function setLook(value, transition={}) {
+      if(disposed) return;
+      if(look.front!==FRONT_IDLE) finishFront();
+      const next=copyLook(value);
+      if(transition.type==='cut' || paused || hidden) {
+        look.override=next; applyLook(next); render(); transition.done?.(); return;
+      }
+      look.target=next; look.front=FRONT_START; look.speed=transition.speed||.45;
+      look.width=transition.width||.1; look.edge=[...(transition.edge||[0,0,0])]; look.done=transition.done||null;
+      palette=next.palette.map(color=>[...color]);
+    }
+    function clearLook() { look.override=null; }
+    function getLook() { return copyLook(look.base); }
+    function getStockLook() { return copyLook(stockBaseline); }
+    const frameHooks=[];
+    // Async flow probe: PIXEL_PACK_BUFFER plus a fence, polled once per frame.
+    // A synchronous readPixels stalls the frame by about 23 ms on an M4 Air.
+    let probePoints=[], probeResult=null, probeBuffer=null, probeFence=null, probeIssued=0, probePending=null;
+    function probePoll() {
+      if(!probeFence) return;
+      const status=gl.clientWaitSync(probeFence,0,0);
+      if(status!==gl.ALREADY_SIGNALED && status!==gl.CONDITION_SATISFIED) return;
+      const n=probePending.length, out=new Float32Array(n*8);
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER,probeBuffer); gl.getBufferSubData(gl.PIXEL_PACK_BUFFER,0,out); gl.bindBuffer(gl.PIXEL_PACK_BUFFER,null);
+      gl.deleteSync(probeFence); probeFence=null;
+      probeResult={frame:probeIssued,samples:probePending.map((point,i)=>({point,
+        // Solver texels per sim-second, converted to uv per real second.
+        velocity:[out[i*8]/simWidth*.45,out[i*8+1]/simHeight*.45],
+        light:[out[i*8+4],out[i*8+5],out[i*8+6]]}))};
+    }
+    function probeIssue() {
+      if(probeFence || !probePoints.length) return;
+      const n=probePoints.length;
+      if(!probeBuffer) probeBuffer=gl.createBuffer();
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER,probeBuffer);
+      gl.bufferData(gl.PIXEL_PACK_BUFFER,n*8*4,gl.STREAM_READ);
+      probePoints.forEach(([x,y],i)=>{
+        const cx=Math.max(0,Math.min(1,x)), cy=Math.max(0,Math.min(1,y));
+        gl.bindFramebuffer(gl.FRAMEBUFFER,velocity.read.framebuffer);
+        gl.readPixels(Math.min(simWidth-1,Math.floor(cx*simWidth)),Math.min(simHeight-1,Math.floor(cy*simHeight)),1,1,gl.RGBA,gl.FLOAT,i*32);
+        gl.bindFramebuffer(gl.FRAMEBUFFER,wideA.framebuffer);
+        gl.readPixels(Math.min(wideA.width-1,Math.floor(cx*wideA.width)),Math.min(wideA.height-1,Math.floor(cy*wideA.height)),1,1,gl.RGBA,gl.FLOAT,i*32+16);
+      });
+      gl.bindFramebuffer(gl.FRAMEBUFFER,null); gl.bindBuffer(gl.PIXEL_PACK_BUFFER,null);
+      probeFence=gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE,0); gl.flush();
+      probeIssued=frames; probePending=probePoints.map(point=>[...point]);
+    }
+    // After each simulated frame: issue the async probe, then run frame hooks.
+    function afterFrame(dt) {
+      probeIssue();
+      for(const hook of [...frameHooks]) {
+        try { hook({frames,dt:dt/.45,simDt:dt}); } catch(error) { console.error(error); }
+      }
+    }
+    function releaseProbe() {
+      if(probeFence) gl.deleteSync(probeFence);
+      if(probeBuffer) gl.deleteBuffer(probeBuffer);
+      probeFence=null; probeBuffer=null; probeResult=null;
+    }
+    // Unit direction of the strand centerline in uv, a JS port of the seed shader.
+    // GLSL's mat2 is column-major, so the rotation signs match the shader's q and world.
+    function ambientDirection(x,y) {
+      const aspect=canvas.width/canvas.height, m=Math.min(aspect,1);
+      const px=(x-.5)*aspect/m, py=(y-.5)/m;
+      const angle=lightStyle.waveA[0]+.10*Math.sin(lightPhase), c=Math.cos(angle), s=Math.sin(angle);
+      const qx=c*px+s*py, f=lightStyle.waveA[2], ph=lightPhase;
+      const slope=lightStyle.waveA[1]*f*(.52*Math.cos(qx*4*f+.85+ph*.3)+.525*Math.cos(qx*7*f-1)-.175*Math.cos(qx*5*f+ph+1));
+      const wx=c-s*slope, wy=s+c*slope, len=Math.hypot(wx,wy)||1;
+      return [wx/len*m/aspect, wy/len*m];
+    }
     function composeLight() {
       // Only pointer color lives in dye history. Ambient light has no feedback.
       // Contiguous taps reject grid ripples; stretching sparse taps passes them.
@@ -662,7 +858,7 @@ SOFTWARE.
       bindTexture(0,opticalB); use('wideBlur',{source:0,offset:[0,1/simHeight]}); draw(opticalA);
       bindTexture(0,dye.read); bindTexture(1,opticalA);
       use('seed',{source:0,deformation:1,warp:1,glass:material==='glass'?1:0,
-        aspect:canvas.width/canvas.height,phase:lightPhase,amount:1.5,field:0,...lightStyle});
+        aspect:canvas.width/canvas.height,streamTime,phase:lightPhase,amount:1.5,field:0,...lightStyle});
       draw(composition);
     }
     function simulation(dt) {
@@ -692,6 +888,7 @@ SOFTWARE.
     function render() {
       if (disposed || contextLost) return;
       if (allocate()) return render();
+      use('seed',moodUniforms()); use('display',displayMoodUniforms());
       composeLight();
       if (material==='glass') {
         // Composition has consumed the optical flow map; reuse its scratch targets.
@@ -718,9 +915,16 @@ SOFTWARE.
       const dt=Math.min(Math.max((now-lastTime)/1000,0),1/30)*.45;
       lastTime=now;
       if (allocate()) lastTime=now;
+      probePoll();
       simulation(dt);
+      streamTime+=dt;
+      if(look.front!==FRONT_IDLE) {
+        look.front+=look.speed*dt/.45;
+        if(look.front>=FRONT_END) finishFront();
+      }
       frames++; canvas.dataset.frames=String(frames);
       render(); schedule();
+      afterFrame(dt);
       } catch(error) { fail(error); }
     }
     function setPaused(value) {
@@ -759,7 +963,8 @@ SOFTWARE.
         y:1-Math.max(0,Math.min(1,(event.clientY-rect.top)/rect.height))};
     }
     function pointerMove(event) {
-      if (disposed || paused || hidden || (event.pointerType!=='mouse' && !pointerLast.has(event.pointerId))) return;
+      if (disposed || paused || hidden || !pointerLast.has(event.pointerId)) return;
+      if(event.pointerType!=='touch' && !(event.buttons&1)) { pointerEnd(event); return; }
       const pos=local(event), old=pointerLast.get(event.pointerId);
       pointerLast.set(event.pointerId,pos);
       if (!old) return;
@@ -776,15 +981,21 @@ SOFTWARE.
       interactions++; canvas.dataset.interactions=String(interactions);
     }
     function pointerDown(event) {
-      if(disposed || paused || hidden) return;
-      pointerLast.set(event.pointerId,local(event));
-      if(event.pointerType==='touch') { canvas.setPointerCapture?.(event.pointerId); event.preventDefault(); }
+      if(disposed || paused || hidden || event.button!==0 || pointerLast.has(event.pointerId)) return;
+      const pos=local(event);
+      pointerLast.set(event.pointerId,pos);
+      // Capture keeps release events attached to the canvas outside its bounds.
+      // Synthetic regression events have no active pointer and cannot capture.
+      try { canvas.setPointerCapture?.(event.pointerId); } catch (_) {}
+      if(event.pointerType==='touch') event.preventDefault();
+      injectVortex(pos.x,pos.y);
+      interactions++; canvas.dataset.interactions=String(interactions);
     }
     function pointerEnd(event) { pointerLast.delete(event.pointerId); }
     function keydown(event) {
       if(disposed) return;
       const key=event.code || event.key;
-      if (key==='Space' || key===' ') { event.preventDefault(); setPaused(!paused); return; }
+      if ((key==='Space' || key===' ') && options.pauseOnSpace!==false) { event.preventDefault(); setPaused(!paused); return; }
       if(paused || hidden) return;
       const direction={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,1],ArrowDown:[0,-1]}[key];
       if (!direction) return;
@@ -799,6 +1010,7 @@ SOFTWARE.
     function dispose() {
       if(disposed) return;
       disposed=true; cancelAnimationFrame(raf); raf=0;
+      releaseProbe(); frameHooks.length=0; look.done=null;
       for(const fn of cleanup) fn();
       dropTargets();
       for(const value of Object.values(programs)) gl.deleteProgram(value);
@@ -823,6 +1035,8 @@ SOFTWARE.
         on(canvas,'pointerup',pointerEnd);
         on(canvas,'pointercancel',pointerEnd);
         on(canvas,'pointerleave',pointerEnd);
+        on(canvas,'lostpointercapture',pointerEnd);
+        on(window,'blur',()=>pointerLast.clear());
         on(canvas,'keydown',keydown);
       }
       on(canvas,'webglcontextlost',event=>{
@@ -844,7 +1058,12 @@ SOFTWARE.
       canvas.dataset.state='error';
       throw error;
     }
-    return {setPaused,setMaterial,render,reset,dispose,setTuning,getTuning};
+    return {setPaused,setMaterial,render,reset,dispose,setTuning,getTuning,
+      setLook,clearLook,getLook,getStockLook,ambientDirection,
+      isPaused:()=>paused,
+      setProbePoints(points){probePoints=points.map(point=>[point[0],point[1]]);},
+      readProbe(){return probeResult;},
+      onFrame(hook){frameHooks.push(hook);return()=>{const i=frameHooks.indexOf(hook); if(i>=0) frameHooks.splice(i,1);};}};
   }
 
   window.FluidPrototype={create,tuningSchema};

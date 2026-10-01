@@ -25,12 +25,11 @@ function target() {
     focus() { this.focused = true; }
   };
 }
-function boot({ hash = '', search = '', content = false, reduce = false, missing = false, fail = false } = {}) {
-  const ids = ['scene-layer', 'fluid-canvas', 'profile-panel', 'scene-pause', 'scene-status',
+function boot({ hash = '', search = '', content = false, reduce = false, missing = false, fail = false, concert = false, mode = false } = {}) {
+  const ids = ['scene-layer', 'fluid-canvas', 'profile-panel', 'scene-status', 'site-header',
     'profile-status', 'view-toggle', 'view-label', 'book-icon', 'scene-icon', 'scene-reset', 'scene-home', 'paper-home'];
   const nodes = Object.fromEntries(ids.map(id => [id, target()]));
   if (content) {
-    delete nodes['scene-pause'];
     delete nodes['scene-reset'];
   }
   nodes['view-toggle'].hidden = true;
@@ -44,7 +43,8 @@ function boot({ hash = '', search = '', content = false, reduce = false, missing
     querySelectorAll: () => links
   });
   const media = Object.assign(target(), { matches: reduce });
-  const calls = { creates: 0, disposals: 0, pauses: [], histories: [], resets: [], configs: [] };
+  const calls = { creates: 0, disposals: 0, pauses: [], histories: [], resets: [], configs: [],
+    order: [], concertCreates: 0, concertOptions: [], activations: [] };
   const location = new URL('http://localhost/' + (content ? 'academic.html' : 'homepage-preview.html') + search + hash);
   const history = {
     scrollRestoration: 'auto',
@@ -54,11 +54,36 @@ function boot({ hash = '', search = '', content = false, reduce = false, missing
   };
   let options;
   const renderer = {
-    setPaused(value) { calls.pauses.push(value); nodes['fluid-canvas'].dataset.paused = String(value); options.onPauseChange(value); },
-    reset(seed) { calls.resets.push(seed); nodes['fluid-canvas'].dataset.seed = String(seed); },
-    render() {}, dispose() { calls.disposals++; }
+    setPaused(value) { calls.pauses.push(value); calls.order.push('fluid.paused:' + value); nodes['fluid-canvas'].dataset.paused = String(value); options.onPauseChange(value); },
+    reset(seed) { calls.resets.push(seed); calls.order.push('fluid.reset'); nodes['fluid-canvas'].dataset.seed = String(seed); },
+    render() {}, dispose() { calls.disposals++; calls.order.push('fluid.dispose'); }
   };
-  const window = Object.assign(target(), { location, history, scrollY: 0, matchMedia: () => media,
+  // Concert fakes: the controller factory and chaewon.js's attach/refresh hooks.
+  // A new controller starts enabled, as chaewon/concert-mode.js does.
+  let concertEnabled = true, concertActive = false, attached = null;
+  const controller = {
+    setEnabled(value) { concertEnabled = !!value; if (!concertEnabled) concertActive = false; calls.order.push('concert.enabled:' + concertEnabled); },
+    // The concert measures the header and starts the light here; record the layout it would see.
+    activate() {
+      concertActive = true;
+      calls.order.push('concert.activate');
+      calls.activations.push({ view: document.body.dataset.view, profileHidden: nodes['profile-panel'].hidden,
+        scrollY: window.scrollY, paused: nodes['fluid-canvas'].dataset.paused });
+    },
+    reset() { calls.order.push('concert.reset'); },
+    dispose() { calls.order.push('concert.dispose'); },
+    isActive: () => concertActive, isEnabled: () => concertEnabled,
+  };
+  // chaewon.js's dispatch rule (render): with the mode on, an attached, enabled, inactive concert activates.
+  const dispatch = () => { if (mode && attached && attached.isEnabled() && !attached.isActive()) attached.activate(); };
+  const extras = concert ? {
+    ChaewonConcert: { create(options) { calls.concertCreates++; calls.concertOptions.push(options); return controller; } },
+    ChaewonMode: {
+      setConcert(value) { attached = value || null; calls.order.push(value ? 'mode.attach' : 'mode.detach'); dispatch(); },
+      refresh() { calls.order.push('mode.refresh'); dispatch(); }
+    },
+  } : {};
+  const window = Object.assign(target(), extras, { location, history, scrollY: 0, matchMedia: () => media,
     scrollTo(value) { this.scrollY = typeof value === 'object' ? value.top : value; },
     FluidPrototype: missing ? undefined : { create(canvas, config) {
       calls.creates++; options = config; calls.configs.push(config);
@@ -146,9 +171,8 @@ test('content pages default to original paper with no GPU and a paper Home link'
   assert.equal(app.nodes['paper-home'].hidden, false);
 });
 
-test('Reset generates a new seed without changing the view or paused state', () => {
-  const app = boot({ search: '?seed=123' });
-  app.nodes['scene-pause'].emit('click');
+test('Reset generates a new seed without changing the view or reduced-motion suspension', () => {
+  const app = boot({ search: '?seed=123', reduce: true });
   app.nodes['scene-reset'].emit('click');
   assert.equal(app.calls.resets.length, 1);
   assert.notEqual(app.calls.resets[0], 123);
@@ -244,17 +268,12 @@ test('back and forward hashes switch views without writing more history', () => 
   assert.equal(app.calls.histories.length, writes);
 });
 
-test('user pause survives profile switches, tab visibility, and media changes', () => {
+test('the scene resumes after profile switches, tab visibility, and media changes', () => {
   const app = boot();
-  app.nodes['scene-pause'].emit('click');
-  assert.equal(app.nodes['fluid-canvas'].dataset.paused, 'true');
   app.nodes['view-toggle'].emit('click'); app.nodes['view-toggle'].emit('click');
   app.document.hidden = true; app.document.emit('visibilitychange');
   app.document.hidden = false; app.document.emit('visibilitychange');
   app.preference(true); app.preference(false);
-  assert.equal(app.nodes['fluid-canvas'].dataset.paused, 'true');
-  assert.equal(app.nodes['scene-pause'].textContent, 'Play');
-  app.nodes['scene-pause'].emit('click');
   assert.equal(app.nodes['fluid-canvas'].dataset.paused, 'false');
 });
 
@@ -266,10 +285,9 @@ test('renderer-owned preference callbacks cannot start the inactive scene', () =
   assert.equal(app.document.body.dataset.view, 'profile');
 });
 
-test('reduced motion and background tabs suspend playback without changing user choice', () => {
+test('reduced motion and background tabs suspend playback without playback controls', () => {
   const app = boot({ reduce: true });
   assert.equal(app.nodes['fluid-canvas'].dataset.paused, 'true');
-  assert.equal(app.nodes['scene-pause'].disabled, true);
   app.preference(false);
   assert.equal(app.nodes['fluid-canvas'].dataset.paused, 'false');
   app.document.hidden = true; app.document.emit('visibilitychange');
@@ -278,12 +296,13 @@ test('reduced motion and background tabs suspend playback without changing user 
   assert.equal(app.nodes['fluid-canvas'].dataset.paused, 'false');
 });
 
-test('canvas Space expresses a user pause rather than an incidental suspension', () => {
+test('canvas Space leaves the scene playing instead of creating a hidden pause state', () => {
   const app = boot();
   app.nodes['fluid-canvas'].emit('keydown', { code: 'Space', key: ' ' });
-  assert.equal(app.nodes['fluid-canvas'].dataset.paused, 'true');
+  assert.equal(app.nodes['fluid-canvas'].dataset.paused, 'false');
   app.nodes['view-toggle'].emit('click'); app.nodes['view-toggle'].emit('click');
-  assert.equal(app.nodes['fluid-canvas'].dataset.paused, 'true');
+  assert.equal(app.nodes['fluid-canvas'].dataset.paused, 'false');
+  assert.equal(app.calls.configs[0].pauseOnSpace, false);
 });
 
 test('missing, failed, or lost graphics leave the profile readable with a status', () => {
@@ -307,4 +326,82 @@ test('page cache suspension resumes only the active unpaused scene', () => {
   assert.equal(app.nodes['fluid-canvas'].dataset.paused, 'false');
   app.window.emit('pagehide', { persisted: false });
   assert.equal(app.calls.disposals, 1);
+});
+
+test('the entrance creates one concert on its renderer, attaches it, and enables it in the scene', () => {
+  const app = boot({ concert: true });
+  assert.equal(app.calls.creates, 1);
+  assert.equal(app.calls.concertCreates, 1);
+  const options = app.calls.concertOptions[0];
+  assert.equal(options.fluid, app.renderer, 'the concert consumes the homepage renderer');
+  assert.equal(options.canvas, app.nodes['fluid-canvas']);
+  assert.equal(options.host, app.nodes['scene-layer']);
+  assert.ok(app.calls.order.includes('mode.attach'));
+  assert.ok(app.calls.order.includes('concert.enabled:true'));
+});
+
+test('Paper disables the concert before the renderer pauses, then refreshes the mode', () => {
+  const app = boot({ concert: true });
+  app.calls.order.length = 0;
+  app.nodes['view-toggle'].emit('click');
+  const order = app.calls.order;
+  assert.ok(order.indexOf('concert.enabled:false') >= 0);
+  assert.ok(order.indexOf('concert.enabled:false') < order.indexOf('fluid.paused:true'), order.join(' '));
+  assert.ok(order.indexOf('mode.refresh') > order.indexOf('concert.enabled:false'));
+  app.nodes['view-toggle'].emit('click');
+  assert.equal(app.calls.concertCreates, 1, 'switching views reuses one controller');
+  assert.ok(app.calls.order.includes('concert.enabled:true'));
+});
+
+test('Reset resets the fluid before the concert', () => {
+  const app = boot({ concert: true });
+  app.calls.order.length = 0;
+  app.nodes['scene-reset'].emit('click');
+  assert.deepEqual(app.calls.order.filter(entry => /reset/.test(entry)), ['fluid.reset', 'concert.reset']);
+  assert.equal(app.calls.concertCreates, 1);
+});
+
+test('leaving the page disposes the concert before the renderer without handing the mode to the classic decorations', () => {
+  const app = boot({ concert: true });
+  app.window.emit('pagehide', { persisted: true });
+  assert.ok(!app.calls.order.includes('concert.dispose'), 'a cached page keeps its concert');
+  app.window.emit('pageshow', { persisted: true });
+  app.calls.order.length = 0;
+  app.window.emit('pagehide', { persisted: false });
+  const order = app.calls.order;
+  assert.ok(order.indexOf('concert.dispose') >= 0 && order.indexOf('concert.dispose') < order.indexOf('fluid.dispose'), order.join(' '));
+  // A detach makes chaewon.js mount the classic decorations and fetch their manifest on the unloading page.
+  assert.ok(!order.includes('mode.detach') && !order.includes('mode.refresh'), order.join(' '));
+});
+
+test('a late graphics failure disposes and detaches the concert and keeps Paper usable', () => {
+  const app = boot({ concert: true });
+  app.calls.order.length = 0;
+  app.lateFailure();
+  const order = app.calls.order;
+  assert.ok(order.includes('concert.dispose') && order.includes('mode.detach'), order.join(' '));
+  assert.ok(order.indexOf('concert.dispose') < order.indexOf('fluid.dispose'));
+  assert.equal(app.document.body.dataset.view, 'profile');
+});
+
+test('content pages never create a concert, and a missing concert script is harmless', () => {
+  const content = boot({ concert: true, content: true, search: '?view=scene&seed=5' });
+  assert.equal(content.calls.concertCreates, 0);
+  const plain = boot();
+  assert.equal(plain.calls.creates, 1);
+  assert.equal(plain.document.body.dataset.view, 'scene');
+});
+
+test('with the mode on, Scene from scrolled Paper activates the concert in the laid-out, running scene', () => {
+  const app = boot({ hash: '#profile', concert: true, mode: true });
+  const scene = { view: 'scene', profileHidden: true, scrollY: 0, paused: 'false' };
+  app.window.scrollY = 282;
+  app.nodes['view-toggle'].emit('click');
+  assert.equal(app.calls.activations.length, 1, app.calls.order.join(' '));
+  assert.deepEqual(app.calls.activations[0], scene, 'the first switch creates the concert; it must not activate on Paper');
+  app.nodes['view-toggle'].emit('click');
+  assert.equal(app.window.scrollY, 282, 'Paper keeps its reading position');
+  app.nodes['view-toggle'].emit('click');
+  assert.equal(app.calls.activations.length, 2);
+  assert.deepEqual(app.calls.activations[1], scene, 'a later switch measures the scene at the top');
 });

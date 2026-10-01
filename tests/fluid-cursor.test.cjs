@@ -16,7 +16,7 @@ function emitter(value = {}) {
 }
 
 function fixture(options = {}) {
-  const splats = [], lights = [], fields = [], calls = { draws: 0, clears: 0 };
+  const splats = [], vortices = [], lights = [], fields = [], captures = [], calls = { draws: 0, clears: 0 };
   let program, frame;
   const gl = { MAX_TEXTURE_SIZE: 4096, FRAMEBUFFER_COMPLETE: 1, TEXTURE0: 100 };
   for (const name of ['VERTEX_SHADER', 'FRAGMENT_SHADER', 'COMPILE_STATUS', 'LINK_STATUS', 'DEPTH_TEST', 'BLEND',
@@ -38,6 +38,8 @@ function fixture(options = {}) {
     calls.draws++;
     if (program.shaders.some(shader => shader.source?.includes('uniform vec2 point;')))
       splats.push(structuredClone(program.uniforms));
+    if (program.shaders.some(shader => shader.source?.includes('uniform float spin;')))
+      vortices.push(structuredClone(program.uniforms));
     if (program.shaders.some(shader => shader.source?.includes('uniform int field;')) && program.uniforms.field === 0)
       lights.push(structuredClone(program.uniforms));
     if (program.shaders.some(shader => shader.source?.includes('uniform int field;')) && program.uniforms.field === 1)
@@ -53,7 +55,7 @@ function fixture(options = {}) {
     getContext: () => gl,
     getBoundingClientRect: () => ({ left: 0, top: 0, width: 1000, height: 500 }),
     hasAttribute: () => false,
-    setPointerCapture() {}
+    setPointerCapture(id) { captures.push(id); }
   }));
   const media = emitter({ matches: true });
   const window = emitter({ devicePixelRatio: 1 });
@@ -66,9 +68,11 @@ function fixture(options = {}) {
     Math, structuredClone
   });
   const scene = window.FluidPrototype.create(canvas, { paused: false, ambient: false, ...options });
-  const move = (x, y = 250, pointerId = 1, pointerType = 'mouse') =>
-    canvas.emit('pointermove', { pointerId, pointerType, clientX: x, clientY: y });
-  return { canvas, scene, splats, lights, fields, calls, move,
+  const down = (x, y = 250, pointerId = 1, pointerType = 'mouse', button = 0) =>
+    canvas.emit('pointerdown', { pointerId, pointerType, clientX: x, clientY: y, button, buttons: button === 0 ? 1 : 2 });
+  const move = (x, y = 250, pointerId = 1, pointerType = 'mouse', buttons = 1) =>
+    canvas.emit('pointermove', { pointerId, pointerType, clientX: x, clientY: y, buttons });
+  return { canvas, window, document, scene, splats, vortices, captures, lights, fields, calls, move, down,
     step(now = 16) {
       if (!frame) return false;
       const callback = frame; frame = null; callback(now); return true;
@@ -83,9 +87,90 @@ function velocitySplats(app) {
   return app.splats.filter(splat => splat.color[2] === 0);
 }
 
+test('vortex dye remains finite inside and outside its crescent on GLSL implementations', () => {
+  const shader = source.match(/vortex: `([\s\S]*?)`,/)[1];
+  const expressions = shader.match(/float (?:edge|crescent)=[^;]+;/g).join('\n').replace(/\bfloat\b/g, 'let');
+  const profile = new Function('r2', 'sqrt', 'exp', 'pow', expressions + '\nreturn crescent;');
+  // GLSL does not define pow for a negative base, even with an integer exponent.
+  const glslPow = (base, exponent) => base < 0 ? NaN : Math.pow(base, exponent);
+  for (const radius of [0, .01, .25, .51, .52, .7, 1, 2]) {
+    const density = profile(radius * radius, Math.sqrt, Math.exp, glslPow);
+    assert.ok(Number.isFinite(density) && density >= 0 && density <= 1, 'Radius ' + radius);
+  }
+});
+
+test('mouse hover and a held button that started outside the canvas do not stir', () => {
+  const app = fixture();
+  const before = { ...app.calls };
+  app.move(100, 250, 1, 'mouse', 0);
+  app.move(700, 250, 1, 'mouse', 0);
+  app.move(800);
+  assert.deepEqual(app.calls, before);
+  assert.equal(app.canvas.dataset.interactions, '0');
+});
+
+test('a primary click adds one localized vortex and visible dye without a drag', () => {
+  const app = fixture();
+  app.down(400, 150);
+  assert.equal(app.canvas.dataset.interactions, '1');
+  assert.equal(app.vortices.length, 2, 'One velocity pass and one dye pass');
+  const [velocity, dye] = app.vortices;
+  assert.deepEqual(velocity.center, [.4, .7]);
+  assert.equal(velocity.velocityPass, 1);
+  assert.ok(velocity.spin > 0 && velocity.spin <= .55, 'A click adds a gentle impulse');
+  const radiusPixels = velocity.radius * app.canvas.height;
+  assert.ok(radiusPixels >= 20 && radiusPixels <= 35,
+    'A click stays within a 20–35px radius on a 500px-short-edge canvas');
+  assert.equal(dye.velocityPass, 0);
+  assert.ok(dye.color.some(value => value > 0));
+  assert.deepEqual(app.captures, [1]);
+  app.canvas.emit('pointerup', { pointerId: 1 });
+  app.move(800, 250, 1, 'mouse', 0);
+  assert.equal(app.canvas.dataset.interactions, '1');
+  assert.equal(app.splats.length, 0);
+});
+
+test('secondary clicks and unheld movement cannot start or continue a stroke', () => {
+  const app = fixture();
+  app.down(100, 250, 1, 'mouse', 2);
+  app.move(200, 250, 1, 'mouse', 2);
+  assert.equal(app.canvas.dataset.interactions, '0');
+  app.down(300);
+  app.move(400, 250, 1, 'mouse', 0);
+  app.move(500);
+  assert.equal(app.canvas.dataset.interactions, '1');
+  assert.equal(app.splats.length, 0);
+});
+
+test('cancel, capture loss, window blur, and visibility changes discard held strokes', () => {
+  for (const end of ['pointercancel', 'lostpointercapture', 'blur', 'visibilitychange']) {
+    const app = fixture();
+    app.down(100);
+    app.move(200);
+    if (end === 'blur') app.window.emit(end);
+    else if (end === 'visibilitychange') {
+      app.document.hidden = true;
+      app.document.emit(end);
+      app.document.hidden = false;
+      app.document.emit(end);
+    } else app.canvas.emit(end, { pointerId: 1 });
+    app.move(800);
+    assert.equal(app.canvas.dataset.interactions, '2', end);
+    assert.equal(dyeSplats(app).length, 1, end);
+  }
+});
+
+test('homepage Space does not pause, while arrow keys still stir', () => {
+  const app = fixture({ pauseOnSpace: false });
+  app.canvas.emit('keydown', { code: 'Space' });
+  assert.equal(app.canvas.dataset.paused, 'false');
+  app.canvas.emit('keydown', { key: 'ArrowRight' });
+  assert.equal(app.canvas.dataset.interactions, '1');
+});
+
 test('one sparse pointer move submits a stroke from the old point to the new point', () => {
   const app = fixture();
-  app.move(100);
+  app.down(100);
   app.move(700);
   const splats = dyeSplats(app);
   assert.equal(splats.length, 1);
@@ -95,10 +180,10 @@ test('one sparse pointer move submits a stroke from the old point to the new poi
 
 test('color at a traveled distance does not depend on the number of pointer events', () => {
   const sparse = fixture();
-  sparse.move(100);
+  sparse.down(100);
   sparse.move(700);
   const dense = fixture();
-  dense.move(100);
+  dense.down(100);
   for (const x of [200, 300, 400, 500, 600, 700]) dense.move(x);
   const a = dyeSplats(sparse).at(-1).color;
   const b = dyeSplats(dense).at(-1).color;
@@ -107,9 +192,9 @@ test('color at a traveled distance does not depend on the number of pointer even
 
 test('stroke momentum follows traveled distance rather than pointer event count', () => {
   const sparse=fixture();
-  sparse.move(100);sparse.move(700);
+  sparse.down(100);sparse.move(700);
   const dense=fixture();
-  dense.move(100);
+  dense.down(100);
   for(const x of [200,300,400,500,600,700]) dense.move(x);
   const a=velocitySplats(sparse), b=velocitySplats(dense);
   assert.equal(a.length,1);
@@ -123,11 +208,11 @@ test('stroke momentum follows traveled distance rather than pointer event count'
 
 test('cursor force has isotropic physical strength and touch uses its own scale', () => {
   const mouse=fixture();
-  mouse.move(100,250);mouse.move(200,350);
+  mouse.down(100,250);mouse.move(200,350);
   const m=velocitySplats(mouse).at(-1).color;
   assert.ok(Math.abs(Math.hypot(m[0],m[1])-110)<1e-9);
   const touch=fixture();
-  touch.canvas.emit('pointerdown',{pointerId:5,pointerType:'touch',clientX:100,clientY:250});
+  touch.down(100,250,5,'touch');
   touch.move(200,350,5,'touch');
   const t=velocitySplats(touch).at(-1).color;
   assert.ok(Math.abs(Math.hypot(t[0],t[1])-130)<1e-9);
@@ -135,18 +220,19 @@ test('cursor force has isotropic physical strength and touch uses its own scale'
 
 test('leaving and reentering starts a new stroke without a connecting segment', () => {
   const app = fixture();
-  app.move(100);
+  app.down(100);
   app.move(200);
   app.canvas.emit('pointerleave', { pointerId: 1, pointerType: 'mouse' });
   app.move(800);
   assert.equal(dyeSplats(app).length, 1);
+  app.down(800);
   app.move(900);
   assert.deepEqual(dyeSplats(app).at(-1).start, [0.8, 0.5]);
 });
 
 test('touch motion paints a segment and keyboard input paints a point', () => {
   const app = fixture();
-  app.canvas.emit('pointerdown', { pointerId: 5, pointerType: 'touch', clientX: 100, clientY: 250 });
+  app.down(100,250,5,'touch');
   app.move(300, 250, 5, 'touch');
   assert.deepEqual(dyeSplats(app).at(-1).start, [0.1, 0.5]);
   app.canvas.emit('keydown', { key: 'ArrowRight' });
@@ -158,7 +244,7 @@ test('paused mouse, touch, pen, and arrow input make no graphics changes', () =>
   const app = fixture({ paused: true });
   const before = { ...app.calls };
   for (const [pointerId, pointerType] of [[1, 'mouse'], [2, 'touch'], [3, 'pen']]) {
-    app.canvas.emit('pointerdown', { pointerId, pointerType, clientX: 100, clientY: 250 });
+    app.down(100,250,pointerId,pointerType);
     app.move(700, 250, pointerId, pointerType);
   }
   app.canvas.emit('keydown', { key: 'ArrowRight' });
@@ -169,21 +255,22 @@ test('paused mouse, touch, pen, and arrow input make no graphics changes', () =>
 
 test('pause and resume discard pointer history instead of joining across the pause', () => {
   const app = fixture();
-  app.move(100); app.move(200);
+  app.down(100); app.move(200);
   app.scene.setPaused(true);
   app.move(800);
   app.canvas.emit('keydown', { code: 'Space' });
   assert.equal(app.canvas.dataset.paused, 'false');
   app.move(850);
   assert.equal(dyeSplats(app).length, 1);
+  app.down(850);
   app.move(900);
   assert.deepEqual(dyeSplats(app).at(-1).start, [.85, .5]);
 });
 
 test('reset clears pointer history and counters while preserving the paused state', () => {
   const app = fixture();
-  app.move(100); app.move(200);
-  assert.equal(app.canvas.dataset.interactions, '1');
+  app.down(100); app.move(200);
+  assert.equal(app.canvas.dataset.interactions, '2');
   app.scene.setPaused(true);
   const clears = app.calls.clears;
   app.scene.reset(47);
@@ -199,13 +286,13 @@ test('a supplied random seed reproduces wave uniforms and cursor color after res
   const app = fixture({ randomized: true, seed: 1247 });
   const original = app.lights.at(-1);
   assert.equal(app.canvas.dataset.seed, '1247');
-  app.move(100); app.move(400);
+  app.down(100); app.move(400);
   const originalColor = dyeSplats(app).at(-1).color;
   app.scene.reset(9876);
-  app.move(200); app.move(900);
+  app.down(200); app.move(900);
   app.scene.reset(1247);
   assert.deepEqual(app.lights.at(-1), original);
-  app.move(100); app.move(400);
+  app.down(100); app.move(400);
   assert.deepEqual(dyeSplats(app).at(-1).color, originalColor);
   assert.equal(app.canvas.dataset.seed, '1247');
 });
@@ -221,7 +308,7 @@ test('random seeds change both the wave geometry and its palette without per-ren
   assert.notDeepEqual([first.tintA, first.tintB], [second.tintA, second.tintB]);
   a.scene.render(); a.scene.render();
   assert.deepEqual(a.lights.at(-1), first);
-  a.move(100); a.move(400); b.move(100); b.move(400);
+  a.down(100); a.move(400); b.down(100); b.move(400);
   assert.notDeepEqual(dyeSplats(a).at(-1).color, dyeSplats(b).at(-1).color);
 });
 
@@ -242,7 +329,7 @@ test('randomized startup chooses broad arcs and slow tangential flow without red
     assert.ok(waveA[2] >= .42 && waveA[2] <= .68, 'Initial curves have broad wavelengths');
     assert.ok(flowSpeed > 0 && flowSpeed <= .02, 'Tangential startup is slow in material coordinates');
     assert.ok(flowScale.every(value => value > 0), 'Material drift converts to solver texels');
-    app.move(100); app.move(200);
+    app.down(100); app.move(200);
     assert.ok(Math.abs(velocitySplats(app).at(-1).color[0] - 110) < 1e-9);
   }
 });
@@ -256,7 +343,7 @@ test('a passive background ignores pointer and keyboard input while preserving p
   const app = fixture({ interactive: false });
   const before = { ...app.calls };
   for (const [pointerId, pointerType] of [[1, 'mouse'], [2, 'touch'], [3, 'pen']]) {
-    app.canvas.emit('pointerdown', { pointerId, pointerType, clientX: 100, clientY: 250 });
+    app.down(100,250,pointerId,pointerType);
     app.move(700, 250, pointerId, pointerType);
   }
   app.canvas.emit('keydown', { key: 'ArrowRight' });

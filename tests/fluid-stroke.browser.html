@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Stroke checks</title>
+<style>body{background:#101318;color:#dcecef;font:14px system-ui}pre{white-space:pre-wrap}</style>
+<h1>Stroke checks</h1><pre id="results">Running…</pre>
+<script>
+(async()=>{
+  const output=document.getElementById('results'), lines=[];
+  let passed=0,total=0;
+  const check=(ok,label)=>{total++;passed+=Number(ok);lines.push(`${ok?'PASS':'FAIL'} ${label}`);};
+  const canvas=document.createElement('canvas');
+  canvas.width=257;canvas.height=129;
+  const gl=canvas.getContext('webgl2');
+  try {
+    if(!gl || !gl.getExtension('EXT_color_buffer_float')) throw new Error('Floating point WebGL unavailable');
+    const source=await(await fetch('../studies/fluid-prototype.js',{cache:'no-store'})).text();
+    const vertex=source.match(/const VERTEX = `([\s\S]*?)`;/)?.[1];
+    const header=source.match(/const HEADER = `([\s\S]*?)`;/)?.[1];
+    const splat=source.match(/splat: `([\s\S]*?)`,\s*\w+:/)?.[1];
+    if(!vertex || !header || !splat) throw new Error('Production splat shader unavailable');
+    function compile(type,code){
+      const shader=gl.createShader(type);gl.shaderSource(shader,code);gl.compileShader(shader);
+      if(!gl.getShaderParameter(shader,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(shader));
+      return shader;
+    }
+    const program=gl.createProgram();
+    gl.attachShader(program,compile(gl.VERTEX_SHADER,vertex));
+    gl.attachShader(program,compile(gl.FRAGMENT_SHADER,header+splat));
+    gl.linkProgram(program);
+    if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(program));
+    gl.useProgram(program);gl.bindVertexArray(gl.createVertexArray());gl.disable(gl.BLEND);
+    const targets=Array.from({length:2},()=>{
+      const texture=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,texture);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+      gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA32F,canvas.width,canvas.height,0,gl.RGBA,gl.FLOAT,null);
+      const framebuffer=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,framebuffer);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,texture,0);
+      if(gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE)throw new Error('Fixture framebuffer incomplete');
+      return {texture,framebuffer};
+    });
+    let read=0;
+    function reset(){
+      gl.clearColor(0,0,0,0);
+      for(const target of targets){gl.bindFramebuffer(gl.FRAMEBUFFER,target.framebuffer);gl.clear(gl.COLOR_BUFFER_BIT);}
+      read=0;
+    }
+    const set1=(name,value)=>gl.uniform1f(gl.getUniformLocation(program,name),value);
+    const set2=(name,value)=>gl.uniform2f(gl.getUniformLocation(program,name),...value);
+    const set3=(name,value)=>gl.uniform3f(gl.getUniformLocation(program,name),...value);
+    gl.uniform1i(gl.getUniformLocation(program,'source'),0);
+    set1('radius',.00028);set1('aspect',canvas.width/canvas.height);
+    function draw(start,end,startColor,endColor){
+      set2('start',start);set2('point',end);set3('startColor',startColor);set3('color',endColor);
+      gl.bindFramebuffer(gl.FRAMEBUFFER,targets[1-read].framebuffer);
+      gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,targets[read].texture);
+      gl.viewport(0,0,canvas.width,canvas.height);gl.drawArrays(gl.TRIANGLES,0,3);
+      read=1-read;
+    }
+    function pixel(x,y=64){
+      gl.bindFramebuffer(gl.FRAMEBUFFER,targets[read].framebuffer);
+      const value=new Float32Array(4);gl.readPixels(x,y,1,1,gl.RGBA,gl.FLOAT,value);return value;
+    }
+    function integral(x,start,end){
+      const aspect=canvas.width/canvas.height, a=start*aspect, length=(end-start)*aspect;
+      const along=(x+.5)/canvas.width*aspect-a, radius=.00028, steps=4096, h=length/steps;
+      let sum=.5*(Math.exp(-along*along/radius)+Math.exp(-Math.pow(along-length,2)/radius));
+      for(let j=1;j<steps;j++) sum+=Math.exp(-Math.pow(along-j*h,2)/radius);
+      return sum*h/Math.sqrt(Math.PI*radius);
+    }
+    const initial=[.1,.2,.3], final=[.8,.4,.1];
+    reset();
+    draw([.1,.5],[.9,.5],initial,final);
+    const positions=[64,128,192];
+    const samples=positions.map(x=>pixel(x));
+    for(let i=0;i<positions.length;i++){
+      const x=(positions[i]+.5)/canvas.width;
+      const t=(x-.1)/.8;
+      const expected=initial.map((channel,c)=>(channel*(1-t)+final[c]*t)*integral(positions[i],.1,.9));
+      check(samples[i][0]>.1,`Interior ${i+1} painted`);
+      check(expected.every((channel,c)=>Math.abs(samples[i][c]-channel)<.003),
+        `Interior ${i+1} color`);
+    }
+    check(samples[0][0]<samples[1][0] && samples[1][0]<samples[2][0],
+      'Red rises across stroke');
+    check(samples[0][2]>samples[1][2] && samples[1][2]>samples[2][2],
+      'Blue falls across stroke');
+    check(pixel(12)[0]<.001,'Stroke stays local');
+    const constant=[.5,.2,.1];
+    function segmented(stops){
+      reset();
+      for(let i=1;i<stops.length;i++)draw([stops[i-1],.5],[stops[i],.5],constant,constant);
+      return positions.map(x=>pixel(x));
+    }
+    const whole=segmented([.1,.9]);
+    const halves=segmented([.1,.5,.9]);
+    const quarters=segmented([.1,.3,.5,.7,.9]);
+    for(let i=0;i<positions.length;i++){
+      const expected=constant[0]*integral(positions[i],.1,.9);
+      check(Math.abs(whole[i][0]-expected)<.003,`Whole ${i+1} integral`);
+      check(Math.abs(halves[i][0]-whole[i][0])<.003,`Halves ${i+1} match`);
+      check(Math.abs(quarters[i][0]-whole[i][0])<.003,`Quarters ${i+1} match`);
+    }
+    reset();
+    draw([.5,.5],[.5,.5],[.5,.2,.1],[.5,.2,.1]);
+    const point=pixel(128);
+    check([...point].every(Number.isFinite),'Point is finite');
+    check(Math.abs(point[0]-.5)<.003 && Math.abs(point[1]-.2)<.003 && Math.abs(point[2]-.1)<.003,
+      'Zero length stroke paints');
+    check(pixel(64)[0]<.001,'Point has no distant stroke');
+    // A smooth dye cross section must match the same Gaussian at every angle.
+    gl.uniform1i(gl.getUniformLocation(program,'dyeMode'),1);
+    set2('pixelSize',[1/canvas.width,1/canvas.height]);
+    set1('coreBrightness',1.5);set1('filamentSpacing',.9);set1('curlStrength',.7);set1('strokeStart',0);
+    reset();draw([.1,.5],[.9,.5],constant,constant);
+    const horizontal=[0,2,4,6].map(offset=>pixel(128,64+offset)[0]);
+    for(let i=0;i<horizontal.length;i++){
+      const offset=[0,2,4,6][i]/canvas.height;
+      const expected=constant[0]*Math.exp(-offset*offset/.00028)*integral(128,.1,.9);
+      check(Math.abs(horizontal[i]-expected)<.004,`Single Gaussian cross section at offset ${[0,2,4,6][i]}`);
+    }
+    reset();draw([.5,.1],[.5,.9],constant,constant);
+    const vertical=[0,2,4,6].map(offset=>pixel(128+offset,64)[0]);
+    check(vertical.every((value,i)=>Math.abs(value-horizontal[i])<.004),
+      'Stroke brightness is independent of direction');
+    function pathIntegral(x,y,start,end){
+      const aspect=canvas.width/canvas.height;
+      const p=[(x+.5)/canvas.width*aspect,(y+.5)/canvas.height];
+      const a=[start[0]*aspect,start[1]],b=[end[0]*aspect,end[1]];
+      const length=Math.hypot(b[0]-a[0],b[1]-a[1]),steps=4096,h=length/steps;
+      let sum=0;
+      for(let j=0;j<=steps;j++){
+        const t=j/steps,q=[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t];
+        const distance=(p[0]-q[0])**2+(p[1]-q[1])**2;
+        sum+=(j===0||j===steps ? .5 : 1)*Math.exp(-distance/.00028);
+      }
+      return sum*h/Math.sqrt(Math.PI*.00028);
+    }
+    const turn=[[.2,.3],[.5,.5],[.7,.8]];
+    reset();draw(turn[0],turn[1],constant,constant);draw(turn[1],turn[2],constant,constant);
+    for(const [x,y] of [[90,51],[126,63],[128,64],[130,65],[154,83]]){
+      const expected=constant[0]*(pathIntegral(x,y,turn[0],turn[1])+pathIntegral(x,y,turn[1],turn[2]));
+      check(Math.abs(pixel(x,y)[0]-expected)<.004,`Turn coverage at ${x},${y}`);
+    }
+    check(gl.getError()===gl.NO_ERROR,'No graphics errors');
+  } catch(error){check(false,error.message);}
+  gl?.getExtension('WEBGL_lose_context')?.loseContext();
+  output.textContent=lines.join('\n')+`\n${passed}/${total} passed`;
+  output.dataset.state=passed===total?'passed':'failed';
+  window.__fluidStrokeResult={passed,total,state:output.dataset.state,lines};
+})();
+</script></html>

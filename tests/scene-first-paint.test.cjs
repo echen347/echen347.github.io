@@ -18,7 +18,7 @@ function earlyTheme(file, suffix) {
   return document.documentElement.dataset;
 }
 
-for (const file of ['index.html']) {
+for (const file of ['index.html', 'homepage-preview.html']) {
   for (const suffix of ['', '?seed=123#scene', '?view=scene#scene']) {
     test(`${file}${suffix} chooses a dark first paint before external resources`, () => {
       assert.equal(earlyTheme(file, suffix).view, 'scene');

@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fluid light coupling</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px; background: #080d14; color: #dcecef; font: 14px/1.5 system-ui; }
+  h1 { margin: 0 0 8px; font-size: 22px; font-weight: 500; }
+  p { color: #aabcc6; }
+  #status { font-variant-numeric: tabular-nums; }
+  #checks { padding-left: 20px; }
+  #checks [data-pass="true"] { color: #9dddb5; }
+  #checks [data-pass="false"] { color: #ff9b91; }
+  #scenes { position: fixed; left: -10000px; top: 0; display: flex; gap: 10px; }
+  #scenes canvas { width: 320px; height: 180px; }
+  #snapshots { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+  figure { margin: 0; border: 1px solid #263540; background: #02060b; }
+  figure canvas { display: block; width: 100%; aspect-ratio: 16 / 9; }
+  figcaption { padding: 8px 10px; }
+</style>
+<h1>Fluid light coupling</h1>
+<p>Four identical scenes use frozen ambient phase and zero pigment. A held pointer stroke changes one scene's velocity; a click-only control shows what the press vortex alone does; a zero-force stroke checks that input alone adds no visible dye.</p>
+<p id="status" role="status">Preparing graphics…</p>
+<ol id="checks"></ol>
+<div id="scenes" aria-hidden="true"><canvas></canvas><canvas></canvas><canvas></canvas><canvas></canvas></div>
+<main id="snapshots"></main>
+<script>
+(async () => {
+  const names = ['No pointer', 'Velocity stroke', 'Zero-force stroke', 'Click only'];
+  const status = document.getElementById('status');
+  const checks = document.getElementById('checks');
+  const snapshots = document.getElementById('snapshots');
+  const canvases = [...document.querySelectorAll('#scenes canvas')];
+  const callbacks = new Map();
+  let clock = 0, nextId = 1, failures = 0, readbacks = 0, scenes = [];
+  function queuedFrame(callback) {
+    const id = nextId++;
+    callbacks.set(id, callback);
+    return id;
+  }
+  function cancelQueuedFrame(id) { callbacks.delete(id); }
+  function check(pass, label) {
+    const item = document.createElement('li');
+    item.dataset.pass = String(pass);
+    item.textContent = (pass ? 'PASS · ' : 'FAIL · ') + label;
+    checks.append(item);
+    if (!pass) failures++;
+  }
+  function read(canvas, label) {
+    const gl = canvas.getContext('webgl2');
+    const pixels = new Uint8Array(canvas.width * canvas.height * 4);
+    gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+    const error = gl.getError();
+    if (error !== gl.NO_ERROR) throw new Error('WebGL error ' + error + ' at ' + label);
+    readbacks++;
+    return pixels;
+  }
+  function difference(a, b) {
+    if (a.length !== b.length) throw new Error('Scenes have unequal raster dimensions');
+    let sum = 0, changed = 0, peak = 0;
+    for (let i = 0; i < a.length; i += 4) {
+      const r = Math.abs(a[i] - b[i]);
+      const g = Math.abs(a[i + 1] - b[i + 1]);
+      const blue = Math.abs(a[i + 2] - b[i + 2]);
+      const delta = Math.max(r, g, blue);
+      sum += r + g + blue;
+      peak = Math.max(peak, delta);
+      if (delta > 2) changed++;
+    }
+    return { mean: sum / (a.length / 4 * 3), changed: changed * 100 / (a.length / 4), peak };
+  }
+  function image(canvas, title) {
+    const figure = document.createElement('figure');
+    const copy = document.createElement('canvas');
+    copy.width = canvas.width;
+    copy.height = canvas.height;
+    copy.getContext('2d').drawImage(canvas, 0, 0);
+    const caption = document.createElement('figcaption');
+    caption.textContent = title;
+    figure.append(copy, caption);
+    snapshots.append(figure);
+  }
+  function snapshot(label) {
+    scenes.forEach((scene, index) => {
+      scene.render();
+      image(canvases[index], names[index] + ' · ' + label);
+    });
+    return canvases.map((canvas, index) => read(canvas, names[index] + ' ' + label));
+  }
+  // A held primary-button stroke: press, three held moves, release.
+  function stroke(canvas) {
+    const rect = canvas.getBoundingClientRect();
+    const points = [[.28,.53],[.43,.43],[.60,.50],[.73,.39]];
+    const send = (type, [x, y], buttons) => canvas.dispatchEvent(new PointerEvent(type, {
+      bubbles: true, pointerId: 1, pointerType: 'mouse', isPrimary: true,
+      button: type === 'pointermove' ? -1 : 0, buttons,
+      clientX: rect.left + rect.width * x, clientY: rect.top + rect.height * y
+    }));
+    send('pointerdown', points[0], 1);
+    for (const point of points.slice(1)) send('pointermove', point, 1);
+    send('pointerup', points.at(-1), 0);
+  }
+  // The control: a press and release at the stroke's start, with no held movement.
+  function click(canvas) {
+    const rect = canvas.getBoundingClientRect();
+    const send = (type, buttons) => canvas.dispatchEvent(new PointerEvent(type, {
+      bubbles: true, pointerId: 1, pointerType: 'mouse', isPrimary: true, button: 0, buttons,
+      clientX: rect.left + rect.width * .28, clientY: rect.top + rect.height * .53
+    }));
+    send('pointerdown', 1);
+    send('pointerup', 0);
+  }
+  try {
+    if (document.hidden) throw new Error('Open this page in a visible tab');
+    const response = await fetch('../studies/fluid-prototype.js', { cache: 'no-store' });
+    if (!response.ok) throw new Error('Could not load the production runtime');
+    const source = await response.text();
+    const create = new Function('requestAnimationFrame', 'cancelAnimationFrame', 'performance',
+      source + '\nreturn window.FluidPrototype.create;')(queuedFrame, cancelQueuedFrame, { now: () => clock });
+    scenes = canvases.map((canvas, index) => create(canvas, {
+      paused: true, ambient: false, seed: 347,
+      tuning: { dyeBrightness: 0, cursorForce: index === 2 ? 0 : 1 }
+    }));
+    check(canvases.every(canvas => canvas.dataset.state === 'ready'), 'All four WebGL scenes are ready');
+    check(scenes.every(scene => scene.getTuning().dyeBrightness === 0), 'All scenes have zero pigment injection');
+    check(canvases.every(canvas => canvas.width === canvases[0].width && canvas.height === canvases[0].height), 'All scenes have identical raster dimensions');
+    const initial = snapshot('paused initial');
+    check(difference(initial[0], initial[1]).peak === 0 && difference(initial[0], initial[2]).peak === 0 &&
+      difference(initial[0], initial[3]).peak === 0,
+      'Seeded scenes begin pixel-identical');
+    scenes.forEach(scene => scene.render());
+    const repeated = canvases.map((canvas, index) => read(canvas, names[index] + ' paused repeat'));
+    check(initial.every((pixels, index) => difference(pixels, repeated[index]).peak === 0),
+      'Repeated paused renders remain pixel-identical');
+    stroke(canvases[1]);
+    stroke(canvases[2]);
+    click(canvases[3]);
+    const pausedStroke = snapshot('paused after stroke');
+    const pausedEffect = difference(pausedStroke[0], pausedStroke[1]);
+    const pausedNegative = difference(pausedStroke[0], pausedStroke[2]);
+    check(Number(canvases[1].dataset.interactions) === 0 && Number(canvases[2].dataset.interactions) === 0 &&
+      Number(canvases[3].dataset.interactions) === 0, 'Paused scenes ignore all pointer strokes and clicks');
+    check(pausedEffect.peak === 0, 'Pointer motion leaves the paused image pixel-identical');
+    check(pausedNegative.peak <= 1,
+      'Zero-force, zero-pigment input leaves the paused image unchanged (peak ' + pausedNegative.peak + ')');
+    scenes.forEach(scene => scene.setPaused(false));
+    stroke(canvases[1]);
+    stroke(canvases[2]);
+    click(canvases[3]);
+    check(Number(canvases[3].dataset.interactions) === 1, 'The click-only control adds one press vortex');
+    check(Number(canvases[1].dataset.interactions) === 4 && Number(canvases[2].dataset.interactions) === 4,
+      'Each live stroke injects its press vortex and three segments before deterministic ticks');
+    for (let frame = 1; frame <= 120; frame++) {
+      const pending = [...callbacks.entries()];
+      if (pending.length !== 4) throw new Error('Expected four scheduled frames at tick ' + frame + ', got ' + pending.length);
+      pending.forEach(([id]) => callbacks.delete(id));
+      clock = frame * (1000 / 60);
+      pending.forEach(([, callback]) => callback(clock));
+      if (frame % 10 === 0) {
+        status.textContent = 'Advanced ' + frame + ' / 120 deterministic ticks';
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+    }
+    scenes.forEach(scene => scene.setPaused(true));
+    const evolved = snapshot('resumed for two seconds');
+    const effect = difference(evolved[0], evolved[1]);
+    const negative = difference(evolved[0], evolved[2]);
+    const clickOnly = difference(evolved[0], evolved[3]);
+    check(effect.changed > .2 && effect.changed > 2 * clickOnly.changed,
+      'Velocity stroke bends live light beyond the click alone after resume (changed ' + effect.changed.toFixed(2) +
+      '% vs ' + clickOnly.changed.toFixed(2) + '%)');
+    check(negative.peak <= 1,
+      'Zero-force, zero-pigment stroke remains equivalent to no pointer after resume (peak ' + negative.peak + ')');
+    check(canvases.every(canvas => Number(canvas.dataset.frames) === 120), 'All scenes advanced exactly 120 frames');
+    check(Number(canvases[0].dataset.interactions) === 0, 'Control scene received no pointer input');
+    check(readbacks === 16, 'No WebGL errors across ' + readbacks + ' readbacks');
+    status.textContent = (failures ? 'FAIL · ' + failures + ' checks failed. ' : 'PASS · All checks passed. ') +
+      'Velocity effect: mean ' + effect.mean.toFixed(3) + '/255, changed ' + effect.changed.toFixed(2) + '%, peak ' + effect.peak +
+      '. Zero-force difference: mean ' + negative.mean.toFixed(3) + '/255, peak ' + negative.peak + '.';
+    document.body.dataset.result = failures ? 'fail' : 'pass';
+  } catch (error) {
+    status.textContent = 'ERROR · ' + error.message;
+    document.body.dataset.result = 'error';
+  } finally {
+    scenes.forEach(scene => scene.dispose());
+  }
+})();
+</script>
+</html>

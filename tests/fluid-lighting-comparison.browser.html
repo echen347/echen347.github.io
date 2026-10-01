@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fluid lighting comparison</title>
+<!--
+MIT License
+Copyright (c) 2017 Pavel Dobryakov
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+-->
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px; background: #080d14; color: #dcecef; font: 14px/1.5 system-ui; }
+  h1 { margin: 0 0 8px; font-size: 22px; font-weight: 500; }
+  p { margin: 0 0 20px; color: #aabcc6; }
+  main { display: grid; grid-template-columns: repeat(auto-fit, 386px); gap: 20px; }
+  figure { width: 386px; margin: 0; background: #02060b; border: 1px solid #263540; }
+  canvas { display: block; width: 384px; height: 216px; background: #02060b; }
+  figcaption { padding: 12px 14px 14px; }
+  strong { display: block; margin-bottom: 4px; color: #f2f7f8; font-weight: 500; }
+  output { display: block; color: #aabcc6; font-variant-numeric: tabular-nums; }
+  #status { margin-top: 20px; white-space: pre-wrap; }
+</style>
+<h1>Fluid lighting comparison</h1>
+<p>Identical paused scene and one identical pointer stroke. Only the display treatment changes.</p>
+<main>
+  <figure><canvas id="soft65"></canvas><figcaption><strong>Soft Glass, glow 0.65</strong><output id="soft65-metrics">Rendering…</output></figcaption></figure>
+  <figure><canvas id="soft100"></canvas><figcaption><strong>Soft Glass, glow 1.00</strong><output id="soft100-metrics">Rendering…</output></figcaption></figure>
+  <figure><canvas id="original"></canvas><figcaption><strong>Original Glass, glow 1.00</strong><output id="original-metrics">Rendering…</output></figcaption></figure>
+</main>
+<p id="status" role="status">Rendering…</p>
+<script>
+(async () => {
+  // This block freezes the soft treatment before production display changes.
+  const softDisplay = `uniform sampler2D dye;
+      uniform sampler2D bloom;
+      uniform sampler2D wideBloom;
+      uniform vec2 texel;
+      uniform int glass;
+      uniform float glowStrength;
+      void main() {
+        vec3 pigment = max(texture(dye,uv).rgb,vec3(0));
+        vec3 color = pigment;
+        if (glass == 1) {
+          float l = dot(texture(dye,uv-vec2(texel.x*2.0,0)).rgb,vec3(0.25,0.55,0.20));
+          float r = dot(texture(dye,uv+vec2(texel.x*2.0,0)).rgb,vec3(0.25,0.55,0.20));
+          float b = dot(texture(dye,uv-vec2(0,texel.y*2.0)).rgb,vec3(0.25,0.55,0.20));
+          float t = dot(texture(dye,uv+vec2(0,texel.y*2.0)).rgb,vec3(0.25,0.55,0.20));
+          vec2 grad = vec2(r-l,t-b);
+          vec3 normal = normalize(vec3(-grad*25.0,1.0));
+          color = pigment * (.72+.28*normal.z);
+        }
+        color=max(color-vec3(.008),vec3(0));
+        color += glowStrength*(texture(bloom,uv).rgb * .24 + texture(wideBloom,uv).rgb * .40);
+        color += vec3(.0004,.0012,.0020);
+        color = vec3(1.0)-exp(-color*1.15);
+        color = pow(color,vec3(0.454545));
+        outColor = vec4(color,1);
+      }`;
+  // Earlier Glass block captured from this prototype before the soft change.
+  // The glow uniform is the sole A/B adaptation; glow 1 reproduces its weights.
+  const originalDisplay = `uniform sampler2D dye;
+      uniform sampler2D bloom;
+      uniform sampler2D wideBloom;
+      uniform vec2 texel;
+      uniform int glass;
+      uniform float glowStrength;
+      void main() {
+        vec3 pigment = max(texture(dye,uv).rgb,vec3(0));
+        float a = dot(pigment,vec3(0.25,0.55,0.20));
+        vec3 color = pigment;
+        if (glass == 1) {
+          float l = dot(texture(dye,uv-vec2(texel.x,0)).rgb,vec3(0.25,0.55,0.20));
+          float r = dot(texture(dye,uv+vec2(texel.x,0)).rgb,vec3(0.25,0.55,0.20));
+          float b = dot(texture(dye,uv-vec2(0,texel.y)).rgb,vec3(0.25,0.55,0.20));
+          float t = dot(texture(dye,uv+vec2(0,texel.y)).rgb,vec3(0.25,0.55,0.20));
+          vec2 grad = vec2(r-l,t-b);
+          vec3 normal = normalize(vec3(-grad*2.8,1.0));
+          float rim = pow(1.0-max(normal.z,0.0),1.5);
+          float gleam = pow(max(dot(normal,normalize(vec3(-0.35,0.55,0.75))),0.0),12.0);
+          color = pigment * (0.60+0.48*normal.z) + vec3(0.33,0.62,0.78)*rim*min(a*1.4,1.0);
+          color += vec3(0.62,0.82,0.90)*gleam*min(a*0.35,1.0);
+        }
+        color=max(color-vec3(.008),vec3(0));
+        color += glowStrength*(texture(bloom,uv).rgb * 0.24 + texture(wideBloom,uv).rgb * .40);
+        color += vec3(.0004,.0012,.0020);
+        color = vec3(1.0)-exp(-color*1.15);
+        color = pow(color,vec3(0.454545));
+        outColor = vec4(color,1);
+      }`;
+  const status = document.getElementById('status');
+  const variants = [
+    { id: 'soft65', display: softDisplay, glow: .65 },
+    { id: 'soft100', display: softDisplay, glow: 1 },
+    { id: 'original', display: originalDisplay, glow: 1 }
+  ];
+  function factory(source, display) {
+    const replacement = 'display: `' + display + '`';
+    const pattern = /display: `[\s\S]*?`(?=\s*\n\s*};)/;
+    if (!pattern.test(source)) throw new Error('Production display shader unavailable');
+    const variantSource = source.replace(pattern, () => replacement);
+    return new Function(variantSource + '\nreturn window.FluidPrototype.create;')();
+  }
+  // Press, one held move, release: a press vortex plus one stroke segment.
+  function gesture(canvas) {
+    const rect = canvas.getBoundingClientRect();
+    const send = (type, x, y, buttons) => canvas.dispatchEvent(new PointerEvent(type, {
+      pointerType: 'mouse', pointerId: 1, isPrimary: true, button: type === 'pointermove' ? -1 : 0, buttons,
+      clientX: rect.left + rect.width * x,
+      clientY: rect.top + rect.height * y,
+      bubbles: true
+    }));
+    send('pointerdown', .34, .56, 1);
+    send('pointermove', .55, .46, 1);
+    send('pointerup', .55, .46, 0);
+  }
+  function metrics(canvas) {
+    const gl = canvas.getContext('webgl2');
+    const pixels = new Uint8Array(canvas.width * canvas.height * 4);
+    gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+    if (gl.getError() !== gl.NO_ERROR) throw new Error('WebGL readback failed');
+    let sum = 0, bright = 0, peak = 0;
+    for (let i = 0; i < pixels.length; i += 4) {
+      const value = pixels[i] * .25 + pixels[i + 1] * .55 + pixels[i + 2] * .20;
+      sum += value;
+      if (value > 170) bright++;
+      peak = Math.max(peak, value);
+    }
+    const count = canvas.width * canvas.height;
+    return { mean: sum / count, bright: 100 * bright / count, peak };
+  }
+  const scenes = [];
+  let expectedSize;
+  try {
+    const response = await fetch('../studies/fluid-prototype.js', { cache: 'no-store' });
+    if (!response.ok) throw new Error('Could not load the fluid runtime');
+    const source = await response.text();
+    for (const variant of variants) {
+      const canvas = document.getElementById(variant.id);
+      const create = factory(source, variant.display);
+      const scene = create(canvas, { paused: true, ambient: false, seed: 347,
+        tuning: { glowStrength: variant.glow } });
+      scenes.push(scene);
+      const size = canvas.width + 'x' + canvas.height;
+      if (expectedSize && size !== expectedSize) throw new Error('Raster sizes differ: ' + expectedSize + ' and ' + size);
+      expectedSize = size;
+      scene.setPaused(false);
+      gesture(canvas);
+      scene.setPaused(true);
+      scene.render();
+      const data = metrics(canvas);
+      const frames = Number(canvas.dataset.frames), interactions = Number(canvas.dataset.interactions);
+      if (canvas.dataset.state !== 'ready' || frames !== 0 || interactions !== 2) {
+        throw new Error(variant.id + ' did not render the same paused scene and stroke');
+      }
+      document.getElementById(variant.id + '-metrics').textContent =
+        'Raster ' + size + ' · Mean ' + data.mean.toFixed(1) + '/255 · Bright pixels ' + data.bright.toFixed(2) + '% · Peak ' + data.peak.toFixed(0) + '/255 · Frames ' + frames + ' · Strokes ' + interactions;
+    }
+    status.textContent = 'Ready: three shaders, identical scene and pointer stroke, no advancing frames.';
+    document.body.dataset.result = 'passed';
+  } catch (error) {
+    status.textContent = 'FAIL: ' + error.message;
+    document.body.dataset.result = 'failed';
+  } finally {
+    for (const scene of scenes) scene.dispose();
+  }
+})();
+</script>
+</html>

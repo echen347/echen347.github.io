@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Fluid glass optics checks</title>
+<style>
+  body { background: #101318; color: #dcecef; font: 14px/1.6 system-ui; padding: 24px; }
+  pre { white-space: pre-wrap; }
+</style>
+<h1>Fluid glass optics checks</h1>
+<p>The production display shader renders controlled dye and surface textures with bloom disabled.</p>
+<pre id="results">Running…</pre>
+<script>
+(async () => {
+  const output = document.getElementById('results'), lines = [];
+  let passed = 0, total = 0;
+  function check(ok, label) {
+    total++;
+    passed += Number(ok);
+    lines.push((ok ? 'PASS ' : 'FAIL ') + label);
+  }
+  const width = 128, height = 64;
+  const canvas = document.createElement('canvas');
+  canvas.width = width; canvas.height = height;
+  const gl = canvas.getContext('webgl2');
+  try {
+    if (!gl || !gl.getExtension('EXT_color_buffer_float')) throw new Error('Floating-point WebGL2 unavailable');
+    const response = await fetch('../studies/fluid-prototype.js', { cache: 'no-store' });
+    if (!response.ok) throw new Error('Production display source unavailable');
+    const source = await response.text();
+    const vertex = source.match(/const VERTEX = `([\s\S]*?)`;/)?.[1];
+    const header = source.match(/const HEADER = `([\s\S]*?)`;/)?.[1];
+    const display = source.match(/display:\s*`([\s\S]*?)`\s*\n\s*};/)?.[1];
+    if (!vertex || !header || !display) throw new Error('Production display shader unavailable');
+    function compile(type, code) {
+      const shader = gl.createShader(type);
+      gl.shaderSource(shader, code);
+      gl.compileShader(shader);
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(shader));
+      return shader;
+    }
+    const program = gl.createProgram();
+    const v = compile(gl.VERTEX_SHADER, vertex), f = compile(gl.FRAGMENT_SHADER, header + display);
+    gl.attachShader(program, v); gl.attachShader(program, f); gl.linkProgram(program);
+    gl.deleteShader(v); gl.deleteShader(f);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program));
+    gl.bindVertexArray(gl.createVertexArray());
+    function texture(make) {
+      const value = gl.createTexture(), data = new Float32Array(width * height * 4);
+      for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) data.set([...make(x, y), 1], (y * width + x) * 4);
+      gl.bindTexture(gl.TEXTURE_2D, value);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, width, height, 0, gl.RGBA, gl.FLOAT, data);
+      return value;
+    }
+    const black = texture(() => [0, 0, 0]);
+    const stripes = texture((x, y) => {
+      if (x < 16 || x >= 112 || y < 8 || y >= 56) return [0, 0, 0];
+      return x < 64 ? [.8, .02, .02] : [.02, .02, 1];
+    });
+    const uniformColor = [.08, .38, .67];
+    const uniformDye = texture(() => uniformColor);
+    const flatSurface = texture(() => [.8, .8, .8]);
+    const bentSurface = texture((x) => {
+      const density = 1.5 + 1.4 * Math.sin((x - 64) * Math.PI / 16);
+      return [density, density, density];
+    });
+    const resultTexture = texture(() => [0, 0, 0]);
+    const framebuffer = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, resultTexture, 0);
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error('Display framebuffer incomplete');
+    function bind(name, slot, value) {
+      gl.activeTexture(gl.TEXTURE0 + slot);
+      gl.bindTexture(gl.TEXTURE_2D, value);
+      const location = gl.getUniformLocation(program, name);
+      if (location !== null) gl.uniform1i(location, slot);
+    }
+    function render(dye, surface, glass) {
+      gl.useProgram(program);
+      bind('dye', 0, dye);
+      bind('bloom', 1, black);
+      bind('wideBloom', 2, black);
+      bind('surface', 3, surface);
+      const texel = gl.getUniformLocation(program, 'texel');
+      if (texel !== null) gl.uniform2f(texel, 1 / width, 1 / height);
+      const surfaceTexel = gl.getUniformLocation(program, 'surfaceTexel');
+      if (surfaceTexel !== null) gl.uniform2f(surfaceTexel, 1 / width, 1 / height);
+      const glassLocation = gl.getUniformLocation(program, 'glass');
+      if (glassLocation !== null) gl.uniform1i(glassLocation, glass ? 1 : 0);
+      const glow = gl.getUniformLocation(program, 'glowStrength');
+      if (glow !== null) gl.uniform1f(glow, 0);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+      gl.viewport(0, 0, width, height);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      const pixels = new Float32Array(width * height * 4);
+      gl.readPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, pixels);
+      if (gl.getError() !== gl.NO_ERROR) throw new Error('WebGL display readback failed');
+      return pixels;
+    }
+    function at(pixels, x, y, channel) { return pixels[(y * width + x) * 4 + channel]; }
+    function maxDifference(a, b) {
+      let peak = 0;
+      for (let i = 0; i < a.length; i++) peak = Math.max(peak, Math.abs(a[i] - b[i]));
+      return peak;
+    }
+    function crossing(pixels) {
+      const y = 32;
+      for (let x = 57; x <= 70; x++) {
+        const left = at(pixels, x - 1, y, 0) - at(pixels, x - 1, y, 2);
+        const right = at(pixels, x, y, 0) - at(pixels, x, y, 2);
+        if (left > 0 && right <= 0) return x - 1 + left / (left - right);
+      }
+      return NaN;
+    }
+    function directTone(value, channel) {
+      const floor = [.0004, .0012, .0020][channel];
+      return Math.pow(1 - Math.exp(-1.15 * (Math.max(value - .008, 0) + floor)), .454545);
+    }
+    const inkFlat = render(stripes, flatSurface, false);
+    const inkBent = render(stripes, bentSurface, false);
+    check(maxDifference(inkFlat, inkBent) < .0005,
+      'Ink ignores surface variation (maximum delta ' + maxDifference(inkFlat, inkBent).toFixed(6) + ')');
+    const flatInk = render(uniformDye, flatSurface, false);
+    const directError = Math.max(...uniformColor.map((value, channel) =>
+      Math.abs(at(flatInk, 32, 32, channel) - directTone(value, channel))));
+    check(directError < .005, 'Ink follows direct pigment tone mapping (error ' + directError.toFixed(5) + ')');
+    const glassFlat = render(stripes, flatSurface, true);
+    const glassBent = render(stripes, bentSurface, true);
+    const flatEdge = crossing(glassFlat), bentEdge = crossing(glassBent);
+    const shift = Math.abs(bentEdge - flatEdge);
+    check(Number.isFinite(shift) && shift > .03,
+      'Surface slope displaces the red-blue dye boundary in Glass (' + shift.toFixed(3) + ' pixels)');
+    const corner = Math.max(at(glassBent, 3, 3, 0), at(glassBent, 3, 3, 1), at(glassBent, 3, 3, 2));
+    check(corner < .08, 'Outside black remains near the display floor (' + corner.toFixed(4) + ')');
+    const flatGlass = render(uniformDye, flatSurface, true);
+    const flatChannels = [0, 1, 2].map(channel => at(flatGlass, 32, 32, channel));
+    check(flatChannels[2] > flatChannels[1] && flatChannels[1] > flatChannels[0] && flatChannels[2] - flatChannels[0] > .2,
+      'Uniform Glass retains blue-green hue without a white wash');
+    // A filtered surface can extend into empty pixels. It must not paint lights there.
+    const emptyFlat = render(black, flatSurface, true);
+    const emptyBent = render(black, bentSurface, true);
+    const emptyDifference = maxDifference(emptyFlat, emptyBent);
+    check(emptyDifference < .005,
+      'Surface shape alone does not create detached lights (delta ' + emptyDifference.toFixed(4) + ')');
+    const thinDye = texture(() => [.002, .002, .002]);
+    const thinFlat = render(thinDye, flatSurface, true);
+    const thinBent = render(thinDye, bentSurface, true);
+    const thinDifference = maxDifference(thinFlat, thinBent);
+    check(thinDifference < .02,
+      'Faint outer dye does not produce opaque highlight blobs (delta ' + thinDifference.toFixed(4) + ')');
+    const brightBlue = texture(() => [0, 0, 4]);
+    const supportedSurface = texture(x => {
+      const h = .25 + .15 * Math.sin((x - 64) * Math.PI / 16);
+      return [h, h, h];
+    });
+    const supportedGlass = render(brightBlue, supportedSurface, true);
+    let glint = 0;
+    for (let i = 0; i < supportedGlass.length; i += 4) glint = Math.max(glint, supportedGlass[i]);
+    check(glint > .10, 'Lit fluid retains reflective glints (red peak ' + glint.toFixed(3) + ')');
+    // Scale the same blue fold through its fade. Red isolates the studio glint.
+    const fadeLevels=[1,.5,.25,.125,.0001,0];
+    const fadeGlints=fadeLevels.map(level=>{
+      const fold=x=>2*level*Math.exp(-Math.pow((x-64)/18,2));
+      const dye=texture(x=>[0,0,fold(x)]);
+      const surface=texture(x=>{
+        const h=1-Math.exp(-fold(x)*.20*.65);
+        return [h,h,h];
+      });
+      const pixels=render(dye,surface,true);
+      let peak=0;
+      for(let i=0;i<pixels.length;i+=4) peak=Math.max(peak,pixels[i]);
+      gl.deleteTexture(dye);gl.deleteTexture(surface);
+      return peak;
+    });
+    const floor=directTone(0,0);
+    check(fadeGlints[2]>.08 && fadeGlints[2]-floor>(fadeGlints[0]-floor)*.3,
+      'Quarter-strength fold retains a visible reflection ('+fadeGlints.map(v=>v.toFixed(4)).join(', ')+')');
+    check(fadeGlints.every(Number.isFinite) && fadeGlints.every(v=>v<=1) &&
+      Math.abs(fadeGlints[4]-floor)<.003 && Math.abs(fadeGlints[5]-floor)<.003,
+      'Near-empty and empty folds lose their reflections without a light floor');
+    check([inkFlat, inkBent, flatInk, glassFlat, glassBent, flatGlass].every(image => image.every(Number.isFinite)),
+      'All display outputs are finite');
+    check(gl.getError() === gl.NO_ERROR, 'Display draws have no WebGL errors');
+  } catch (error) {
+    check(false, error.message);
+  }
+  gl?.getExtension('WEBGL_lose_context')?.loseContext();
+  output.textContent = lines.join('\n') + '\n' + passed + '/' + total + ' passed';
+  output.dataset.state = passed === total ? 'passed' : 'failed';
+})();
+</script>
+</html>

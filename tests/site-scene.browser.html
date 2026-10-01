@@ -123,12 +123,13 @@
     return output;
   };
   const equal = (left, right) => left.length === right.length && left.every((value, index) => value === right[index]);
-  const pointer = (canvas, type, x, y, pointerType = 'mouse', pointerId = 1) => {
+  const pointer = (canvas, type, x, y, pointerType = 'mouse', pointerId = 1, extra = {}) => {
     const bounds = canvas.getBoundingClientRect();
     canvas.dispatchEvent(new (win().PointerEvent)(type, {
       bubbles: true, cancelable: true, pointerId, pointerType,
       clientX: bounds.left + bounds.width * x, clientY: bounds.top + bounds.height * y,
-      buttons: type === 'pointerup' ? 0 : 1
+      button: type === 'pointermove' ? -1 : 0,
+      buttons: type === 'pointerup' ? 0 : 1, ...extra
     }));
   };
 
@@ -305,54 +306,69 @@
     });
   }
 
-  // Pixel equality catches brush injections even when the animation counter stops.
-  await group('Full pause and Reset', async () => {
+  await group('Click, drag, and Reset', async () => {
     await load('../?seed=416238#scene');
     await ready();
     const canvas = page().querySelector('#fluid-canvas');
-    const pause = page().querySelector('#scene-pause');
     const reset = page().querySelector('#scene-reset');
     const reducedMotion = win().matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (canvas.dataset.paused !== 'true') pause.click();
-    await wait(70);
-    const frozen = pixels(canvas), frozenFrames = frames(canvas), frozenInteractions = interactions(canvas);
-    pointer(canvas, 'pointermove', 0.14, 0.18);
-    pointer(canvas, 'pointermove', 0.55, 0.75);
-    pointer(canvas, 'pointermove', 0.92, 0.35);
-    pointer(canvas, 'pointerdown', 0.2, 0.3, 'touch', 2);
-    pointer(canvas, 'pointermove', 0.7, 0.65, 'touch', 2);
-    pointer(canvas, 'pointerup', 0.7, 0.65, 'touch', 2);
-    canvas.dispatchEvent(new (win().KeyboardEvent)('keydown', { key: 'ArrowRight', code: 'ArrowRight', bubbles: true, cancelable: true }));
-    await wait(180);
-    check(equal(frozen, pixels(canvas)), 'Paused mouse, touch, and arrow input leave every displayed pixel unchanged');
-    check(frames(canvas) === frozenFrames && interactions(canvas) === frozenInteractions,
-      'Pause stops both simulation frames and new brush interactions');
-    check(Boolean(reset), 'Scene exposes a Reset control beside Pause');
+    check(!page().querySelector('#scene-pause'), 'The entrance has no Pause control');
+    check(page().querySelector('.scene-footer')?.textContent.trim() === 'Reset',
+      'The entrance footer contains Reset without visible directions');
+    check(Boolean(reset) && hitTarget(reset), 'The entrance Reset control receives pointer input');
     if (!reset) throw new Error('Reset control is missing');
+    const initialPixels = pixels(canvas), initialFrames = frames(canvas), initialInteractions = interactions(canvas);
+    pointer(canvas, 'pointermove', 0.14, 0.18, 'mouse', 1, { buttons: 0 });
+    pointer(canvas, 'pointermove', 0.55, 0.75, 'mouse', 1, { buttons: 0 });
+    check(interactions(canvas) === initialInteractions, 'Unpressed mouse movement cannot stir the entrance');
+    pointer(canvas, 'pointerdown', 0.35, 0.5);
+    check(interactions(canvas) === initialInteractions + (reducedMotion ? 0 : 1),
+      reducedMotion ? 'Reduced motion suppresses click input' : 'Primary click creates one immediate vortex interaction');
+    pointer(canvas, 'pointermove', 0.55, 0.55);
+    check(interactions(canvas) === initialInteractions + (reducedMotion ? 0 : 2),
+      reducedMotion ? 'Reduced motion suppresses held drag input' : 'A held primary drag stirs the entrance');
+    pointer(canvas, 'pointerup', 0.55, 0.55);
+    const afterRelease = interactions(canvas);
+    pointer(canvas, 'pointermove', 0.9, 0.7, 'mouse', 1, { buttons: 0 });
+    check(interactions(canvas) === afterRelease, 'Releasing the mouse stops cursor stirring');
+    pointer(canvas, 'pointerdown', 0.1, 0.2, 'mouse', 2, { button: 2, buttons: 2 });
+    pointer(canvas, 'pointermove', 0.8, 0.7, 'mouse', 2, { buttons: 2 });
+    pointer(canvas, 'pointerup', 0.8, 0.7, 'mouse', 2, { button: 2 });
+    check(interactions(canvas) === afterRelease, 'Secondary mouse input cannot stir the entrance');
+    const pausedBeforeSpace = canvas.dataset.paused;
+    canvas.dispatchEvent(new (win().KeyboardEvent)('keydown', { key: ' ', code: 'Space', bubbles: true, cancelable: true }));
+    check(canvas.dataset.paused === pausedBeforeSpace, 'Space does not leave the entrance paused without a Play control');
+    if (reducedMotion) {
+      pointer(canvas, 'pointerdown', 0.2, 0.3, 'touch', 3);
+      pointer(canvas, 'pointermove', 0.7, 0.65, 'touch', 3);
+      pointer(canvas, 'pointerup', 0.7, 0.65, 'touch', 3);
+      canvas.dispatchEvent(new (win().KeyboardEvent)('keydown', { key: 'ArrowRight', code: 'ArrowRight', bubbles: true, cancelable: true }));
+      await wait(120);
+      check(equal(initialPixels, pixels(canvas)) && frames(canvas) === initialFrames && interactions(canvas) === initialInteractions,
+        'Reduced motion keeps mouse, touch, and arrow input pixel-for-pixel frozen');
+    } else {
+      await until(() => frames(canvas) > initialFrames, 'The entrance stopped advancing');
+      check(canvas.dataset.paused === 'false', 'The entrance continues flowing after clicking and release');
+    }
     const seed = url().searchParams.get('seed');
+    const beforeReset = pixels(canvas);
     reset.click();
     await wait(120);
     const resetSeed = url().searchParams.get('seed');
     check(resetSeed !== seed && /^\d+$/.test(resetSeed || ''), 'Reset generates a fresh seed in the current URL');
-    check(!equal(frozen, pixels(canvas)), 'Reset visibly changes the colors and initial waves');
-    check(canvas === page().querySelector('#fluid-canvas') && canvas.dataset.paused === 'true' && page().body.dataset.view === 'scene',
-      'Reset keeps the same canvas, page, view, and paused state');
-    const resetPixels = pixels(canvas);
-    await wait(120);
-    check(equal(resetPixels, pixels(canvas)), 'A reset paused scene remains frozen');
+    check(!equal(beforeReset, pixels(canvas)), 'Reset visibly changes the colors and initial waves');
+    check(canvas === page().querySelector('#fluid-canvas') && canvas.dataset.paused === String(reducedMotion) && page().body.dataset.view === 'scene',
+      'Reset keeps the canvas, page, view, and reduced-motion setting');
+    check(interactions(canvas) === 0, 'Reset clears earlier cursor interactions');
     for (const name of ['Profile', 'Academic', 'Photography']) {
       check(new URL(nav(name).href).searchParams.get('seed') === resetSeed, `${name} receives the reset palette`);
     }
-    if (!reducedMotion) {
-      pause.click();
-      const beforeInput = interactions(canvas), beforeFrames = frames(canvas);
-      pointer(canvas, 'pointermove', 0.1, 0.55);
-      check(interactions(canvas) === beforeInput, 'Play starts a new stroke instead of connecting to a stale paused cursor');
-      pointer(canvas, 'pointermove', 0.4, 0.55);
-      await until(() => frames(canvas) > beforeFrames, 'Play did not resume simulation');
-      check(interactions(canvas) > beforeInput, 'A fresh cursor stroke draws again after Play');
-    } else {
-      check(pause.disabled && canvas.dataset.paused === 'true', 'Reduced motion keeps playback disabled after Reset');
+    pointer(canvas, 'pointermove', 0.4, 0.55, 'mouse', 1, { buttons: 1 });
+    check(interactions(canvas) === 0, 'Reset discards held-pointer history until a new click');
+    if (reducedMotion) {
+      const resetPixels = pixels(canvas);
+      await wait(120);
+      check(equal(resetPixels, pixels(canvas)), 'Reset keeps a reduced-motion scene frozen');
     }
   });
 

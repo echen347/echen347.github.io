@@ -1,0 +1,141 @@
+/* Chaewon concert on the homepage entrance (chaewon/concert-mode.js). Scoped to
+   the concert layer inside #scene-layer: the fluid is the stage, and the DOM adds
+   only photocards, hearts, and a visually hidden announcement. The Reset footer,
+   header, and page chrome are untouched. Type comes from LaTeX.css (Latin Modern). */
+.chaewon-concert {
+  --concert-pearl: #ffedf9;
+  --concert-pink: #ff1480;
+  --concert-stock: #fbf5f8;
+  --concert-ink: #1e1522;
+  --card-w: 112px;
+  --card-h: 173px;       /* 55:85, the photocard proportion */
+  --forward-w: 196px;
+  --forward-h: 303px;
+  --card-radius: 6px;
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+}
+.chaewon-concert[hidden] { display: none; }
+
+/* Announces the lighting cue and each turned card's text to screen readers without taking footer space. */
+.chaewon-concert-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.chaewon-concert .card {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--card-w);
+  height: var(--card-h);
+  padding: 0;
+  border: 0;
+  border-radius: var(--card-radius);
+  background: none;
+  color: inherit;
+  opacity: 0;
+  cursor: pointer;
+  pointer-events: auto;
+  perspective: 900px;
+  will-change: transform, opacity;
+  -webkit-tap-highlight-color: transparent;
+}
+.chaewon-concert .card:focus-visible { outline: 1px solid var(--concert-pink); outline-offset: 4px; }
+.chaewon-concert .card.is-shown { transition: opacity .9s ease-out; }
+.chaewon-concert .card.is-forward,
+.chaewon-concert .card.is-returning {
+  z-index: 2;
+  transition: transform .55s cubic-bezier(.2, .8, .2, 1), width .55s cubic-bezier(.2, .8, .2, 1),
+    height .55s cubic-bezier(.2, .8, .2, 1), opacity .3s;
+}
+.chaewon-concert .card.is-forward { width: var(--forward-w); height: var(--forward-h); }
+.chaewon-concert .card-inner {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  transition: transform .6s cubic-bezier(.3, .7, .2, 1);
+}
+.chaewon-concert .card.is-flipped .card-inner { transform: rotateY(180deg); }
+.chaewon-concert .card-face {
+  position: absolute;
+  inset: 0;
+  display: block;
+  overflow: hidden;
+  border-radius: var(--card-radius);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+.chaewon-concert .card-front {
+  background: #1b1320;
+  box-shadow: 0 0 0 1px rgba(255, 237, 249, .78), 0 0 22px 1px var(--rim, rgba(255, 20, 128, .42));
+}
+.chaewon-concert .card-front img { display: block; width: 100%; height: 100%; object-fit: cover; }
+/* Gloss: a narrow specular band whose angle follows the card across the stage. */
+.chaewon-concert .card-front::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(var(--sheen, 110deg), transparent 38%, rgba(255, 255, 255, .26) 49%, transparent 58%);
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+.chaewon-concert .card-back {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  transform: rotateY(180deg);
+  padding: 22px 20px;
+  background: var(--concert-stock);
+  color: var(--concert-ink);
+  box-shadow: 0 0 0 1px rgba(255, 237, 249, .9), 0 0 26px 2px var(--rim, rgba(255, 20, 128, .42));
+  font-size: 17px;
+  line-height: 1.5;
+  text-align: left;
+  /* LaTeX.css counts theorems across the whole page; each back restarts the count, so it always reads 1. */
+  counter-reset: theorem definition;
+}
+.chaewon-concert .card-back :is(.theorem, .lemma, .definition, .proof) { margin: 0 0 .7em; }
+.chaewon-concert .card-back .proof::after { content: '\220E'; position: static; float: right; filter: none; margin-left: .5em; }
+
+/* Hearts released from a flipped card ride the current, then fade. */
+.chaewon-concert .heart {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 1;
+  color: var(--concert-pink);
+  font-size: 15px;
+  line-height: 1;
+  text-shadow: 0 0 8px rgba(255, 20, 128, .8);
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+@media (max-width: 600px) {
+  .chaewon-concert {
+    --card-w: 78px;
+    --card-h: 121px;
+    --forward-w: 176px;
+    --forward-h: 272px;
+  }
+  .chaewon-concert .card-back { font-size: 15px; padding: 18px 16px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chaewon-concert .card,
+  .chaewon-concert .card.is-shown,
+  .chaewon-concert .card.is-forward,
+  .chaewon-concert .card.is-returning,
+  .chaewon-concert .card-inner { transition: none; }
+}

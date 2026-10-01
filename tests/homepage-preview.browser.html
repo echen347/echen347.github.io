@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Homepage preview checks</title>
+<style>
+  body { margin: 0; padding: 24px; background: #101318; color: #e5edf2; font: 14px/1.6 system-ui; }
+  iframe { display: block; width: 1000px; height: 760px; border: 1px solid #46505b; }
+  li[data-pass="false"] { color: #ff9999; }
+  li[data-pass="true"] { color: #93dab3; }
+</style>
+<h1>Homepage preview checks</h1>
+<ol id="results"></ol>
+<p id="summary">Running…</p>
+<div id="fixtures"></div>
+<script>
+(async () => {
+  const home = new URLSearchParams(window.location.search).get('home') === '1';
+  const pageUrl = home ? '../' : '../homepage-preview.html';
+  const baselineUrl = home ? '../homepage-preview.html' : '../index.html';
+  const pageName = home ? 'Homepage' : 'Homepage preview';
+  document.title = `${pageName} checks`;
+  document.querySelector('h1').textContent = `${pageName} checks`;
+  document.body.dataset.target = home ? 'home' : 'preview';
+  let passed = 0, failed = 0;
+  const wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+  const check = (condition, label) => {
+    const item = document.createElement('li');
+    item.dataset.pass = String(Boolean(condition));
+    item.textContent = `${condition ? 'PASS' : 'FAIL'}: ${label}`;
+    document.getElementById('results').append(item);
+    condition ? passed++ : failed++;
+  };
+  const load = (hash = '', width = 1000, scripts = true) => new Promise((resolve, reject) => {
+    const frame = document.createElement('iframe');
+    frame.title = `${pageName} ${hash || 'scene'} at ${width} pixels`;
+    frame.style.width = `${width}px`;
+    if (!scripts) frame.setAttribute('sandbox', 'allow-same-origin');
+    const timer = setTimeout(() => reject(new Error(`${pageName} did not finish loading`)), 15000);
+    frame.onload = () => { clearTimeout(timer); resolve(frame); };
+    frame.src = `${pageUrl}?test=${Date.now()}${hash}`;
+    document.getElementById('fixtures').append(frame);
+  });
+  const until = async (predicate, label, timeout = 4500) => {
+    const start = performance.now();
+    while (!predicate() && performance.now() - start < timeout) await wait(50);
+    if (!predicate()) throw new Error(label);
+  };
+  const normalizedText = element => element.textContent.replace(/\s+/g, ' ').trim();
+  const linkValues = element => [...element.querySelectorAll('a')].map(link => [
+    normalizedText(link), link.getAttribute('href'), link.getAttribute('target')
+  ]);
+  const overflowing = doc => doc.documentElement.scrollWidth > doc.documentElement.clientWidth + 1;
+  const frames = canvas => Number(canvas.dataset.frames || 0);
+  let frame;
+  try {
+    const response = await fetch(pageUrl, { cache: 'no-store' });
+    check(response.ok, home ? 'The homepage is available at the site root' : 'The separate homepage preview is available');
+    if (!response.ok) throw new Error(`${pageName} is unavailable`);
+    const baselineResponse = await fetch(baselineUrl, { cache: 'no-store' });
+    if (!baselineResponse.ok) throw new Error('Cannot read the reference page for copy comparison');
+    const baseline = new DOMParser().parseFromString(await baselineResponse.text(), 'text/html');
+
+    frame = await load();
+    let doc = frame.contentDocument;
+    const toggle = doc.getElementById('view-toggle');
+    const label = doc.getElementById('view-label');
+    const scene = doc.getElementById('scene-layer');
+    const profile = doc.getElementById('profile-panel');
+    const canvas = doc.getElementById('fluid-canvas');
+    const reset = doc.getElementById('scene-reset');
+    check(Boolean(toggle && label && scene && profile && canvas && reset), 'Both views expose the profile switch, canvas, and Reset control');
+    if (!(toggle && label && scene && profile && canvas && reset)) throw new Error(`Required ${home ? 'homepage' : 'preview'} controls are missing`);
+    const footer = doc.querySelector('.scene-footer');
+    check(footer?.innerText.trim() === 'Reset' && footer.querySelectorAll('button').length === 1, 'The scene footer shows only Reset, without directions or Pause');
+    const resetBounds = reset.getBoundingClientRect();
+    check(resetBounds.right > doc.documentElement.clientWidth * .8 && resetBounds.bottom > doc.documentElement.clientHeight * .8, 'Reset stays in the bottom-right corner');
+    await until(() => canvas.dataset.state === 'ready', 'The scene renderer did not become ready');
+    check(profile.hidden && profile.inert && !scene.inert && scene.getAttribute('aria-hidden') !== 'true', 'Default scene removes the hidden profile from interaction and accessibility');
+    check(/paper/i.test(label.textContent), 'The book switch names the Paper appearance');
+    check(!overflowing(doc), 'Desktop scene has no horizontal overflow');
+    const originalCanvas = canvas;
+    const reducedMotion = frame.contentWindow.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const initialFrames = frames(canvas);
+    if (reducedMotion) {
+      await wait(250);
+      check(canvas.dataset.paused === 'true' && frames(canvas) === initialFrames, 'Reduced motion presents a still scene');
+    } else {
+      await until(() => frames(canvas) > initialFrames, 'Scene playback did not advance');
+      check(frames(canvas) > initialFrames, 'The scene advances while it is visible');
+    }
+
+    toggle.click();
+    await wait(450);
+    check(!profile.hidden && !profile.inert && scene.inert && scene.getAttribute('aria-hidden') === 'true', 'Profile mode exposes paper content and disables interaction with the scene');
+    check(frame.contentWindow.location.hash === '#profile' && /scene/i.test(label.textContent), 'The Profile switch updates its destination and the shareable URL');
+    const pausedFrames = frames(canvas);
+    await wait(250);
+    check(canvas.dataset.paused === 'true' && frames(canvas) === pausedFrames, 'Reading the profile stops simulation frames');
+    const previewMain = profile.querySelector('main');
+    const baselineMain = baseline.querySelector('main');
+    check(Boolean(previewMain) && normalizedText(previewMain) === normalizedText(baselineMain), home ? 'Homepage preserves the approved preview body copy' : 'Profile preserves the current homepage body copy');
+    check(Boolean(previewMain) && JSON.stringify(linkValues(previewMain)) === JSON.stringify(linkValues(baselineMain)), 'Profile preserves current body link labels, destinations, and targets');
+    check(!overflowing(doc), 'Desktop profile has no horizontal overflow');
+
+    toggle.click();
+    check(doc.getElementById('fluid-canvas') === originalCanvas && frames(canvas) >= pausedFrames, 'Returning to the scene keeps its canvas and simulation history');
+    if (reducedMotion) {
+      await wait(250);
+      check(profile.hidden && profile.inert && !scene.inert && canvas.dataset.paused === 'true' && frames(canvas) === pausedFrames, 'Returning to Scene keeps reduced-motion playback paused');
+    } else {
+      await until(() => frames(canvas) > pausedFrames, 'Returning to Scene did not resume playback');
+      check(profile.hidden && profile.inert && !scene.inert && canvas.dataset.paused === 'false', 'Returning to the scene resumes playback and hides the profile');
+    }
+    canvas.dispatchEvent(new frame.contentWindow.KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true, cancelable: true }));
+    check(canvas.dataset.paused === String(reducedMotion), 'Space does not introduce a hidden playback state');
+    const oldSeed = canvas.dataset.seed;
+    reset.click();
+    check(canvas.dataset.seed !== oldSeed && canvas.dataset.paused === String(reducedMotion), 'Reset changes the scene without changing its automatic playback state');
+    toggle.click(); toggle.click(); toggle.click();
+    await wait(500);
+    const rapidPauseFrames = frames(canvas);
+    await wait(200);
+    check(frame.contentWindow.location.hash === '#profile' && !profile.hidden && scene.inert && canvas.dataset.paused === 'true' && frames(canvas) === rapidPauseFrames, 'Rapid switching settles on the last requested view without background rendering');
+    frame.remove(); frame = null;
+
+    frame = await load('#profile', 390);
+    doc = frame.contentDocument;
+    const directCanvas = doc.getElementById('fluid-canvas');
+    const directProfile = doc.getElementById('profile-panel');
+    await wait(350);
+    check(Boolean(directProfile) && !directProfile.hidden && !directProfile.inert, 'A direct Profile URL opens the paper view');
+    check(Boolean(directCanvas) && frames(directCanvas) === 0 && directCanvas.dataset.state !== 'ready', 'A direct Profile URL does not initialize the fluid renderer');
+    check(!overflowing(doc), 'The 390-pixel profile fits without horizontal overflow');
+    frame.contentWindow.scrollTo({ top: 420, behavior: 'instant' });
+    await wait(100);
+    const readingPosition = frame.contentWindow.scrollY;
+    check(readingPosition > 0, 'The narrow-screen profile can scroll to a reading position');
+    doc.getElementById('view-toggle').click();
+    await until(() => directCanvas.dataset.state === 'ready', 'Scene did not initialize from the Profile deep link');
+    check(!overflowing(doc), 'The 390-pixel scene fits without horizontal overflow');
+    const narrowToggle = doc.getElementById('view-toggle').getBoundingClientRect();
+    check(narrowToggle.width >= 44 && narrowToggle.height >= 44 && narrowToggle.right <= 391 && narrowToggle.left >= 0, 'The narrow-screen book switch remains reachable with a 44-pixel touch target');
+    directCanvas.focus();
+    frame.contentWindow.history.back();
+    await until(() => frame.contentWindow.location.hash === '#profile' && !directProfile.hidden, 'Back did not restore the Profile view');
+    await wait(450);
+    check(Math.abs(frame.contentWindow.scrollY - readingPosition) <= 2, `Browser Back restores the profile reading position (expected ${readingPosition}, got ${frame.contentWindow.scrollY})`);
+    check(!doc.activeElement?.closest('[inert]'), 'Browser Back leaves focus outside the inactive scene');
+    const historyPausedFrames = frames(directCanvas);
+    await wait(200);
+    check(directCanvas.dataset.paused === 'true' && frames(directCanvas) === historyPausedFrames, 'Browser Back stops the scene while showing the profile');
+    frame.contentWindow.history.forward();
+    await until(() => frame.contentWindow.location.hash === '#scene' && directProfile.hidden, 'Forward did not restore the Scene view');
+    check(doc.getElementById('fluid-canvas') === directCanvas && frame.contentWindow.scrollY === 0, 'Browser Forward restores the same scene at the viewport origin');
+    frame.remove(); frame = null;
+
+    frame = await load('', 390, false);
+    doc = frame.contentDocument;
+    const fallbackProfile = doc.getElementById('profile-panel');
+    check(Boolean(fallbackProfile) && !fallbackProfile.hidden && !fallbackProfile.inert && frame.contentWindow.getComputedStyle(fallbackProfile).display !== 'none', 'Without JavaScript, the paper profile remains readable');
+    check(normalizedText(fallbackProfile.querySelector('main')) === normalizedText(baselineMain), 'The script-free fallback preserves the homepage body copy');
+  } catch (error) {
+    check(false, error.message);
+  } finally {
+    frame?.remove();
+    document.getElementById('summary').textContent = `${passed} passed, ${failed} failed`;
+    document.body.dataset.result = failed ? 'failed' : 'passed';
+  }
+})();
+</script>
+</html>

@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Fluid bloom isolation</title>
+<style>
+  :root{color-scheme:dark}
+  body{margin:0;padding:20px;background:#101318;color:#dcecef;font:14px/1.45 system-ui}
+  h1{font-size:22px;font-weight:600;margin:0 0 8px}
+  h2{font-size:17px;font-weight:600;margin:24px 0 6px}
+  p{max-width:80ch;color:#abbec9;margin:0 0 12px}
+  #status{color:#84ccd4;margin-bottom:14px}
+  .scroller{overflow-x:auto}.grid{display:grid;grid-template-columns:80px repeat(4,minmax(240px,1fr));gap:9px;min-width:1120px;align-items:start}
+  .head{font-weight:600}.age{color:#abbec9;padding-top:12px}
+  figure{margin:0;background:#02060b;border:1px solid #2a3e47}
+  img{display:block;width:100%;aspect-ratio:16/9;object-fit:contain}
+  figcaption{padding:5px 7px;color:#abbec9;font:12px/1.4 ui-monospace,SFMono-Regular,monospace}
+  .dot-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;max-width:1100px}
+  .compare-grid{display:grid;grid-template-columns:90px repeat(2,minmax(0,1fr));gap:10px;max-width:1320px}
+  .default-only[hidden],#compare[hidden]{display:none}
+  pre{white-space:pre-wrap;color:#abbec9;margin-top:16px}
+  #stage{position:absolute;left:-200vw;top:0;width:640px;height:360px;visibility:hidden}
+  @media(max-width:760px){body{padding:12px}.dot-grid{grid-template-columns:1fr}}
+</style>
+<h1 class="default-only">Bloom isolation</h1>
+<p class="default-only">Seed 347, ambient sheets on, and the same fast S gesture in every column. The four views differ only in display bloom weights. Fresh and two-second coast frames show whether the faint square light comes from the wide bloom path.</p>
+<div id="status">Preparing renderer…</div>
+<div class="scroller default-only"><div class="grid">
+  <div></div><div class="head">Current</div><div class="head">Wide off</div><div class="head">All bloom off</div><div class="head">Wide only, ×5</div>
+  <div class="age">Fresh</div>
+  <figure><img id="current-fresh" alt="Current bloom, fresh"><figcaption id="caption-current-fresh">Pending</figcaption></figure>
+  <figure><img id="wide-off-fresh" alt="Wide bloom off, fresh"><figcaption id="caption-wide-off-fresh">Pending</figcaption></figure>
+  <figure><img id="all-off-fresh" alt="All bloom off, fresh"><figcaption id="caption-all-off-fresh">Pending</figcaption></figure>
+  <figure><img id="wide-only-fresh" alt="Wide bloom only and boosted, fresh"><figcaption id="caption-wide-only-fresh">Pending</figcaption></figure>
+  <div class="age">2 s coast</div>
+  <figure><img id="current-2s" alt="Current bloom after two seconds"><figcaption id="caption-current-2s">Pending</figcaption></figure>
+  <figure><img id="wide-off-2s" alt="Wide bloom off after two seconds"><figcaption id="caption-wide-off-2s">Pending</figcaption></figure>
+  <figure><img id="all-off-2s" alt="All bloom off after two seconds"><figcaption id="caption-all-off-2s">Pending</figcaption></figure>
+  <figure><img id="wide-only-2s" alt="Wide bloom only and boosted after two seconds"><figcaption id="caption-wide-only-2s">Pending</figcaption></figure>
+</div></div>
+<h2 class="default-only">Controlled HDR dot</h2>
+<p class="default-only">A four-pixel-scale Gaussian enters the production composition, bloom, and wide-blur passes. These diagnostic display views separate the full image from the wide bloom texture.</p>
+<div class="dot-grid default-only">
+  <figure><img id="dot-full" alt="Controlled HDR dot with full display"><figcaption id="caption-dot-full">Pending</figcaption></figure>
+  <figure><img id="dot-wide" alt="Controlled HDR dot, wide bloom only"><figcaption id="caption-dot-wide">Pending</figcaption></figure>
+</div>
+<section id="compare" hidden>
+  <h2>Wide-bloom pass comparison</h2>
+  <p>Both columns use the fetched production renderer. The before column swaps only the wide-bloom render span for its frozen two-call version. The after column uses that span unchanged.</p>
+  <div class="compare-grid">
+    <div></div><div class="head">Before: frozen two-call wide pass</div><div class="head">After: production wide pass</div>
+    <div class="age">Fluid, fresh</div>
+    <figure><img id="before-fresh" alt="Fluid with old wide bloom, fresh"><figcaption id="caption-before-fresh">Pending</figcaption></figure>
+    <figure><img id="after-fresh" alt="Fluid with production wide bloom, fresh"><figcaption id="caption-after-fresh">Pending</figcaption></figure>
+    <div class="age">Fluid, 2 s</div>
+    <figure><img id="before-2s" alt="Fluid with old wide bloom after two seconds"><figcaption id="caption-before-2s">Pending</figcaption></figure>
+    <figure><img id="after-2s" alt="Fluid with production wide bloom after two seconds"><figcaption id="caption-after-2s">Pending</figcaption></figure>
+    <div class="age">HDR dot, full</div>
+    <figure><img id="before-dot-full" alt="HDR dot with old wide bloom in full display"><figcaption id="caption-before-dot-full">Pending</figcaption></figure>
+    <figure><img id="after-dot-full" alt="HDR dot with production wide bloom in full display"><figcaption id="caption-after-dot-full">Pending</figcaption></figure>
+    <div class="age">HDR dot, wide only</div>
+    <figure><img id="before-dot-wide" alt="HDR dot with old wide bloom only"><figcaption id="caption-before-dot-wide">Pending</figcaption></figure>
+    <figure><img id="after-dot-wide" alt="HDR dot with production wide bloom only"><figcaption id="caption-after-dot-wide">Pending</figcaption></figure>
+  </div>
+</section>
+<pre id="results"></pre><canvas id="stage"></canvas>
+<script>
+(async()=>{
+  const status=document.getElementById('status'),results=document.getElementById('results');
+  const canvas=document.getElementById('stage');
+  // Frozen pre-fix wide-bloom path. The comparison replaces only this render span.
+  const oldWidePass=`      bindTexture(0,glowA); use('blur',{source:0,offset:[2/wideA.width,0]}); draw(wideB);
+      bindTexture(0,wideB); use('blur',{source:0,offset:[0,2/wideA.height]}); draw(wideA);
+`;
+  const nativeRAF=window.requestAnimationFrame,nativeCancel=window.cancelAnimationFrame;
+  const pending=new Map();let nextId=1,scene,currentLabel='';
+  window.requestAnimationFrame=callback=>{const id=nextId++;pending.set(id,callback);return id;};
+  window.cancelAnimationFrame=id=>pending.delete(id);
+  function advance(now){
+    const callbacks=[...pending.values()];pending.clear();
+    if(callbacks.length!==1)throw new Error(`Expected one scheduled frame, got ${callbacks.length}`);
+    callbacks[0](now);
+  }
+  function factory(source){(0,eval)(source);return window.FluidPrototype;}
+  const seedEnd='outColor=vec4(wake+light*amount,1);';
+  const displayPattern=/display: `([\s\S]*?)`\n  };/;
+  const wideDisplay=`uniform sampler2D wideBloom;
+      void main() {
+        vec3 wide=max(texture(wideBloom,uv).rgb,vec3(0))*8.0;
+        outColor=vec4(pow(vec3(1.0)-exp(-wide),vec3(.454545)),1);
+      }`;
+  function dotSource(source,wideOnly){
+    if(source.split(seedEnd).length!==2 || !displayPattern.test(source))
+      throw new Error('Dot diagnostic shader boundary changed');
+    let result=source.replace(seedEnd,`vec2 d=(uv-vec2(.5))*vec2(aspect,1.0);
+        outColor=vec4(vec3(24.0)*exp(-dot(d,d)/.00008),1);`);
+    if(wideOnly)result=result.replace(displayPattern,()=>`display: \`${wideDisplay}\`\n  };`);
+    return result;
+  }
+  function oldWideSource(source){
+    const narrowEnd="      bindTexture(0,glowB); use('blur',{source:0,offset:[0,1/glowA.height]}); draw(glowA);\n";
+    const displayStart='      bindTexture(0,composition); bindTexture(1,glowA); bindTexture(2,wideA); bindTexture(3,opticalB);';
+    if(source.split(narrowEnd).length!==2 || source.split(displayStart).length!==2)
+      throw new Error('Wide-bloom render boundaries changed');
+    const start=source.indexOf(narrowEnd)+narrowEnd.length;
+    const end=source.indexOf(displayStart,start);
+    if(end<=start)throw new Error('Wide-bloom render span changed');
+    return source.slice(0,start)+oldWidePass+source.slice(end);
+  }
+  function capture(age){
+    scene.render();
+    const gl=canvas.getContext('webgl2');
+    const pixels=new Uint8Array(canvas.width*canvas.height*4);
+    gl.readPixels(0,0,canvas.width,canvas.height,gl.RGBA,gl.UNSIGNED_BYTE,pixels);
+    let bright=0,mean=0,peak=0;
+    for(let i=0;i<pixels.length;i+=4){
+      const l=.2126*pixels[i]+.7152*pixels[i+1]+.0722*pixels[i+2];
+      mean+=l;bright+=l>30;peak=Math.max(peak,l);
+    }
+    const id=age?`${currentLabel}-${age}`:currentLabel;
+    document.getElementById(id).src=canvas.toDataURL('image/png');
+    document.getElementById(`caption-${id}`).textContent=
+      `${canvas.dataset.frames} steps · mean ${(mean/(pixels.length/4)).toFixed(1)} · >30 ${bright} px · peak ${peak.toFixed(0)}`;
+    if(gl.getError()!==gl.NO_ERROR)throw new Error(`${id}: WebGL error`);
+  }
+  function gesture(){
+    const rect=canvas.getBoundingClientRect(),clock=performance.now();
+    scene.setPaused(false);
+    for(let i=0;i<=40;i++){
+      const t=i/40,x=.06+.88*t,y=.5+.27*Math.sin(2*Math.PI*t);
+      // The renderer stirs only while the button is held: press, then 40 held moves.
+      canvas.dispatchEvent(new PointerEvent(i?'pointermove':'pointerdown',{
+        pointerId:1,pointerType:'mouse',isPrimary:true,button:i?-1:0,buttons:1,
+        clientX:rect.left+x*rect.width,clientY:rect.top+y*rect.height,bubbles:true
+      }));
+      if(i>0 && i%2===0)advance(clock+i/2*1000/30);
+    }
+    canvas.dispatchEvent(new PointerEvent('pointerup',{pointerId:1,pointerType:'mouse',isPrimary:true,button:0,buttons:0,bubbles:true}));
+    capture('fresh');
+    for(let i=21;i<=80;i++)advance(clock+i*1000/30);
+    capture('2s');scene.setPaused(true);
+    // One press vortex plus 40 stroke segments.
+    if(Number(canvas.dataset.interactions)!==41 || Number(canvas.dataset.frames)!==80)
+      throw new Error(`${currentLabel}: gesture or frame count drifted`);
+  }
+  try{
+    const response=await fetch('../studies/fluid-prototype.js',{cache:'no-store'});
+    if(!response.ok)throw new Error(`Renderer fetch failed: ${response.status}`);
+    const production=await response.text();
+    if(new URLSearchParams(location.search).has('compare')){
+      document.querySelectorAll('.default-only').forEach(node=>node.hidden=true);
+      document.getElementById('compare').hidden=false;
+      const before=oldWideSource(production);
+      for(const [label,source] of [['before',before],['after',production]]){
+        currentLabel=label;status.textContent=`Rendering ${label} fluid…`;
+        pending.clear();scene=factory(source).create(canvas,{paused:true,ambient:true,seed:347});
+        gesture();scene.dispose();scene=null;
+        for(const dotKind of ['full','wide']){
+          currentLabel=`${label}-dot-${dotKind}`;
+          status.textContent=`Rendering ${currentLabel}…`;
+          pending.clear();scene=factory(dotSource(source,dotKind==='wide')).create(canvas,{paused:true,ambient:false,seed:347});
+          scene.setMaterial('ink');capture('');scene.dispose();scene=null;
+        }
+      }
+      status.textContent='Before/after comparison complete.';status.dataset.state='passed';
+      results.textContent='PASS four fluid frames and four HDR-dot diagnostics · only the wide-bloom render span differs';
+      window.__fluidBloomLookResult={state:'passed',mode:'compare',snapshots:8};
+      return;
+    }
+    const narrow='texture(bloom,uv).rgb * .24';
+    const wide='texture(wideBloom,uv).rgb * .40';
+    if(production.split(narrow).length!==2 || production.split(wide).length!==2)
+      throw new Error('Production bloom display weights changed');
+    const variants=[
+      ['current',production],
+      ['wide-off',production.replace(wide,'texture(wideBloom,uv).rgb * .0')],
+      ['all-off',production.replace(narrow,'texture(bloom,uv).rgb * .0').replace(wide,'texture(wideBloom,uv).rgb * .0')],
+      ['wide-only',production.replace(narrow,'texture(bloom,uv).rgb * .0').replace(wide,'texture(wideBloom,uv).rgb * 2.0')]
+    ];
+    for(const [label,source] of variants){
+      currentLabel=label;status.textContent=`Rendering ${label} gesture…`;
+      pending.clear();scene=factory(source).create(canvas,{paused:true,ambient:true,seed:347});
+      gesture();scene.dispose();scene=null;
+    }
+
+    const dotVariants=[['dot-full',dotSource(production,false)],
+      ['dot-wide',dotSource(production,true)]];
+    for(const [label,source] of dotVariants){
+      currentLabel=label;status.textContent=`Rendering ${label} diagnostic…`;
+      pending.clear();scene=factory(source).create(canvas,{paused:true,ambient:false,seed:347});
+      scene.setMaterial('ink');capture('');scene.dispose();scene=null;
+    }
+    status.textContent='Comparison complete.';status.dataset.state='passed';
+    results.textContent='PASS eight gesture snapshots and two HDR-dot diagnostics · one reused WebGL canvas';
+    window.__fluidBloomLookResult={state:'passed',snapshots:10};
+  }catch(error){
+    status.textContent=`Comparison failed: ${error.message}`;status.dataset.state='failed';
+    results.textContent=error.stack||String(error);
+    window.__fluidBloomLookResult={state:'failed',error:String(error)};
+  }finally{scene?.dispose();window.requestAnimationFrame=nativeRAF;window.cancelAnimationFrame=nativeCancel;}
+})();
+</script>
+</html>

@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fluid prototype checks</title>
+<style>body{background:#101318;color:#e5edf2;font:14px/1.6 system-ui;padding:24px}canvas{display:block;width:640px;max-width:100%;height:360px}li[data-pass="false"]{color:#ff9999}li[data-pass="true"]{color:#93dab3}</style>
+<h1>Fluid prototype checks</h1>
+<canvas id="scene"></canvas>
+<ol id="results"></ol>
+<p id="summary">Running…</p>
+<script src="../studies/fluid-prototype.js?v=luminous-fade-1"></script>
+<script>
+(async () => {
+  let passed = 0, failed = 0;
+  const check = (ok, label) => {
+    const li = document.createElement('li');
+    li.dataset.pass = Boolean(ok); li.textContent = `${ok ? 'PASS' : 'FAIL'}: ${label}`;
+    document.getElementById('results').append(li); ok ? passed++ : failed++;
+  };
+  const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+  let scene;
+  try {
+    check(typeof window.FluidPrototype?.create === 'function', 'Fluid renderer is available');
+    if (!window.FluidPrototype) throw new Error('Fluid renderer has not been implemented');
+    const canvas = document.getElementById('scene');
+    scene = FluidPrototype.create(canvas, { paused: true, ambient: false, seed: 347 });
+    const gl = canvas.getContext('webgl2');
+    function pixels() {
+      scene.render();
+      const data = new Uint8Array(canvas.width * canvas.height * 4);
+      gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, data);
+      return data;
+    }
+    const initial = pixels();
+    let lit = 0, dark = 0;
+    for (let i = 0; i < initial.length; i += 4) {
+      const brightness = Math.max(initial[i], initial[i + 1], initial[i + 2]);
+      if (brightness > 50) lit++;
+      if (brightness < 25) dark++;
+    }
+    check(lit > canvas.width * canvas.height * .01, 'Initial composition contains visible fluid');
+    check(dark > canvas.width * canvas.height * .08, 'Initial composition preserves dark space');
+    check(gl.getError() === gl.NO_ERROR, 'Shaders and framebuffers render without WebGL errors');
+    const frames = Number(canvas.dataset.frames);
+    await wait(180);
+    check(Number(canvas.dataset.frames) === frames, 'Paused simulation schedules no advancing frames');
+    scene.setPaused(false);
+    await wait(350);
+    scene.setPaused(true);
+    check(Number(canvas.dataset.frames) > frames, 'Playing advances the fluid');
+    const moved = pixels();
+    check(moved.some((v, i) => Math.abs(v - initial[i]) > 4), 'Simulation changes rendered pixels');
+    scene.setMaterial('ink');
+    const ink = pixels();
+    check(ink.some((v, i) => Math.abs(v - moved[i]) > 4), 'Ink and glass produce distinct shading');
+    const rectangle = canvas.getBoundingClientRect();
+    const pointer = (type, x, y, buttons) => canvas.dispatchEvent(new PointerEvent(type, {
+      pointerId: 1, pointerType: 'mouse', isPrimary: true,
+      button: type === 'pointermove' ? -1 : 0, buttons,
+      clientX: rectangle.left + x, clientY: rectangle.top + y, bubbles: true
+    }));
+    // Changed pixels inside the stroke's far end, where a press alone cannot reach.
+    const strokeEnd = (a, b) => {
+      const scale = canvas.width / rectangle.width;
+      let changed = 0;
+      for (let y = Math.floor(190 * scale); y < Math.floor(270 * scale); y++) {
+        const row = canvas.height - 1 - y;
+        for (let x = Math.floor(320 * scale); x < Math.floor(420 * scale); x++) {
+          const i = (row * canvas.width + x) * 4;
+          if (Math.max(Math.abs(a[i] - b[i]), Math.abs(a[i + 1] - b[i + 1]), Math.abs(a[i + 2] - b[i + 2])) > 24) changed++;
+        }
+      }
+      return changed;
+    };
+    scene.setPaused(false);
+    const hoverStart = Number(canvas.dataset.interactions);
+    pointer('pointermove', 180, 150, 0);
+    pointer('pointermove', 370, 230, 0);
+    scene.setPaused(true);
+    check(Number(canvas.dataset.interactions) === hoverStart, 'Hover without a pressed button does not stir');
+    // Click-only control, then a held drag from the same seed and the same press point.
+    scene.reset(347);
+    const base = pixels();
+    scene.setPaused(false);
+    pointer('pointerdown', 180, 150, 1);
+    pointer('pointerup', 180, 150, 0);
+    scene.setPaused(true);
+    check(Number(canvas.dataset.interactions) === 1, 'A primary click adds one vortex');
+    const clickOnly = pixels();
+    scene.reset(347);
+    scene.setPaused(false);
+    pointer('pointerdown', 180, 150, 1);
+    pointer('pointermove', 260, 180, 1);
+    pointer('pointermove', 370, 230, 1);
+    pointer('pointerup', 370, 230, 0);
+    scene.setPaused(true);
+    check(Number(canvas.dataset.interactions) === 3, 'A held drag adds its press vortex and two stroke segments');
+    const dragged = pixels();
+    const dragEnd = strokeEnd(base, dragged), clickEnd = strokeEnd(base, clickOnly);
+    check(dragEnd > 50 && dragEnd > 4 * clickEnd, `Held drag changes the stroke end beyond the click alone (${dragEnd} vs ${clickEnd} pixels)`);
+    const beforeKey = Number(canvas.dataset.interactions);
+    scene.setPaused(false);
+    canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    scene.setPaused(true);
+    check(Number(canvas.dataset.interactions) > beforeKey, 'Keyboard input can stir the scene');
+    scene.reset();
+    const reset = pixels();
+    check(reset.some((v, i) => Math.abs(v - ink[i]) > 4), 'New flow changes the composition');
+    check(gl.getError() === gl.NO_ERROR, 'Material changes, input, and reset leave no WebGL errors');
+    scene.dispose();
+    const stopped = Number(canvas.dataset.frames);
+    await wait(150);
+    check(Number(canvas.dataset.frames) === stopped, 'Disposal stops scheduled work');
+    const motionCanvas = document.createElement('canvas');
+    motionCanvas.style.cssText = 'width:390px;height:844px';
+    document.body.append(motionCanvas);
+    const motionGL = motionCanvas.getContext('webgl2');
+    const allocateTexture = motionGL.texImage2D;
+    const textureSizes = [];
+    motionGL.texImage2D = function (...args) { textureSizes.push([args[3], args[4]]); return allocateTexture.apply(this, args); };
+    const matchMedia = window.matchMedia;
+    const preference = Object.assign(new EventTarget(), { matches: true });
+    window.matchMedia = () => preference;
+    let reduced, resizeError;
+    try { reduced = FluidPrototype.create(motionCanvas, { ambient: false, onError: error => { resizeError = error; } }); }
+    finally { window.matchMedia = matchMedia; motionGL.texImage2D = allocateTexture; }
+    // Role-aware sizes for a 390x844 CSS portrait canvas, as in fluid-raster.test.cjs:
+    // light on the display grid under the 1.5x density cap; narrow-screen solver and dye
+    // grids. The 1.6-million-pixel cap does not bind here; fluid-raster.test.cjs covers it.
+    const expected = {
+      1: { display: [390, 844], solver: [144, 311], dye: [504, 1090] },
+      2: { display: [585, 1266], solver: [144, 311], dye: [504, 1090] },
+    }[window.devicePixelRatio];
+    const same = ([w, h]) => size => size[0] === w && size[1] === h;
+    if (expected) {
+      check(textureSizes.some(same(expected.display)), `Portrait light resolves on the ${expected.display.join('×')} display grid`);
+      check(textureSizes.some(same(expected.solver)), `Portrait solver grid is ${expected.solver.join('×')}`);
+      check(textureSizes.some(same(expected.dye)), `Portrait dye grid is ${expected.dye.join('×')}`);
+      const d = expected.display;
+      const roles = [d, expected.solver, expected.dye, [Math.floor(d[0] / 4), Math.floor(d[1] / 4)], [Math.floor(d[0] / 16), Math.floor(d[1] / 16)]];
+      check(textureSizes.every(size => roles.some(role => same(role)(size))), 'Every portrait allocation has a known role');
+    } else {
+      check(false, `No expected portrait sizes for device pixel ratio ${window.devicePixelRatio}; run at 1x or 2x`);
+    }
+    check(motionCanvas.dataset.paused === 'true', 'Reduced motion begins paused');
+    reduced.setPaused(false);
+    await wait(100);
+    check(Number(motionCanvas.dataset.frames) > 0, 'Explicit Play works with reduced motion');
+    motionGL.texImage2D = () => { throw new Error('Simulated allocation failure'); };
+    motionCanvas.style.width = '410px';
+    motionCanvas.style.height = '620px';
+    window.dispatchEvent(new Event('resize'));
+    motionGL.texImage2D = allocateTexture;
+    check(resizeError?.message === 'Simulated allocation failure' && motionCanvas.dataset.state === 'error', 'Failed resize stops the renderer and reports a recoverable error');
+    reduced.dispose();
+  } catch (error) { check(false, error.message); scene?.dispose(); }
+  document.getElementById('summary').textContent = `${passed} passed, ${failed} failed`;
+  document.body.dataset.result = failed ? 'failed' : 'passed';
+})();
+</script>
+</html>

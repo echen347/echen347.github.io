@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Fluid display checks</title>
+<style>
+  body { background: #101318; color: #dcecef; font: 14px/1.6 system-ui; padding: 24px; }
+  li[data-pass="false"] { color: #ff9999; }
+  li[data-pass="true"] { color: #93dab3; }
+</style>
+<h1>Fluid display checks</h1>
+<ol id="results"></ol>
+<p id="summary">Running…</p>
+<script>
+(async () => {
+  const width = 128, height = 128;
+  const canvas = document.createElement('canvas');
+  canvas.width = width; canvas.height = height;
+  const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true, antialias: false });
+  const results = document.getElementById('results');
+  let passed = 0, failed = 0;
+  function check(ok, label, detail = '') {
+    const item = document.createElement('li');
+    item.dataset.pass = String(Boolean(ok));
+    item.textContent = (ok ? 'PASS' : 'FAIL') + ': ' + label + (detail ? ' (' + detail + ')' : '');
+    results.append(item);
+    ok ? passed++ : failed++;
+  }
+  try {
+    if (!gl || !gl.getExtension('EXT_color_buffer_float')) throw new Error('Floating point WebGL unavailable');
+    const source = await (await fetch('../studies/fluid-prototype.js', { cache: 'no-store' })).text();
+    const match = source.match(/display: `([\s\S]*?)`\s*\n\s*};/);
+    if (!match) throw new Error('Production display shader unavailable');
+    const vertex = `#version 300 es
+      out vec2 uv;
+      void main() {
+        vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
+        uv = p;
+        gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+      }`;
+    const fragment = `#version 300 es
+      precision highp float;
+      precision highp sampler2D;
+      in vec2 uv;
+      out vec4 outColor;
+      ` + match[1];
+    function compile(type, code) {
+      const shader = gl.createShader(type);
+      gl.shaderSource(shader, code);
+      gl.compileShader(shader);
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(shader));
+      return shader;
+    }
+    const program = gl.createProgram();
+    const vertexShader = compile(gl.VERTEX_SHADER, vertex);
+    const fragmentShader = compile(gl.FRAGMENT_SHADER, fragment);
+    gl.attachShader(program, vertexShader);
+    gl.attachShader(program, fragmentShader);
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program));
+    gl.useProgram(program);
+    gl.bindVertexArray(gl.createVertexArray());
+    function texture(data) {
+      const result = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, result);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, width, height, 0, gl.RGBA, gl.FLOAT, data);
+      return result;
+    }
+    const black = texture(new Float32Array(width * height * 4));
+    const pigment = [0.72, 0.055, 0.018];
+    function dyeData(gaussian, strength = 1) {
+      const data = new Float32Array(width * height * 4);
+      for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+        const dx = (x + .5) / width - .5;
+        const dy = (y + .5) / height - .5;
+        const amplitude = gaussian ? .04 + .96 * Math.exp(-(dx * dx + dy * dy) / (.12 * .12 * 2)) : 1;
+        const i = (y * width + x) * 4;
+        for (let c = 0; c < 3; c++) data[i + c] = pigment[c] * amplitude * strength;
+        data[i + 3] = 1;
+      }
+      return data;
+    }
+    const flat = texture(dyeData(false));
+    const smooth = texture(dyeData(true));
+    const luminous = texture(dyeData(true, 4));
+    function surfaceData(gaussian, strength = 1) {
+      const dye = dyeData(gaussian, strength);
+      const result = new Float32Array(dye.length);
+      for (let i = 0; i < dye.length; i += 4) {
+        const density = dye[i] * .25 + dye[i + 1] * .55 + dye[i + 2] * .20;
+        const height = 1 - Math.exp(-density * .65);
+        result[i] = result[i + 1] = result[i + 2] = height;
+        result[i + 3] = 1;
+      }
+      return result;
+    }
+    const flatSurface = texture(surfaceData(false));
+    const smoothSurface = texture(surfaceData(true));
+    const luminousSurface = texture(surfaceData(true, 4));
+    function uniform(name, callback) {
+      const location = gl.getUniformLocation(program, name);
+      if (location !== null) callback(location);
+    }
+    uniform('dye', location => gl.uniform1i(location, 0));
+    uniform('bloom', location => gl.uniform1i(location, 1));
+    uniform('wideBloom', location => gl.uniform1i(location, 2));
+    uniform('surface', location => gl.uniform1i(location, 3));
+    uniform('texel', location => gl.uniform2f(location, 1 / width, 1 / height));
+    uniform('surfaceTexel', location => gl.uniform2f(location, 1 / width, 1 / height));
+    uniform('glowStrength', location => gl.uniform1f(location, 1));
+    function render(dye, surface, glass) {
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, dye);
+      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, black);
+      gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, black);
+      gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, surface);
+      uniform('glass', location => gl.uniform1i(location, glass ? 1 : 0));
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.viewport(0, 0, width, height);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      const pixels = new Uint8Array(width * height * 4);
+      gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+      return pixels;
+    }
+    function expectedChannel(value, channel) {
+      const background = [.0004, .0012, .0020][channel];
+      return 255 * Math.pow(1 - Math.exp(-1.15 * (Math.max(value - .008, 0) + background)), .454545);
+    }
+    const flatInk = render(flat, flatSurface, false);
+    const flatGlass = render(flat, flatSurface, true);
+    const center = ((height / 2) * width + width / 2) * 4;
+    const inkErrors = pigment.map((value, channel) => Math.abs(flatInk[center + channel] - expectedChannel(value, channel)));
+    const flatDifference = Math.max(...pigment.map((_, channel) => Math.abs(flatGlass[center + channel] - flatInk[center + channel])));
+    check(Math.max(...inkErrors) <= 3, 'Flat Ink follows direct pigment tone mapping', 'max error ' + Math.max(...inkErrors).toFixed(1) + '/255');
+    check(flatDifference <= 12 && flatGlass[center] > flatGlass[center + 1] && flatGlass[center + 1] > flatGlass[center + 2], 'Flat Glass retains the warm pigment without a white wash', 'max difference ' + flatDifference + '/255');
+    const smoothInk = render(smooth, smoothSurface, false);
+    const smoothGlass = render(smooth, smoothSurface, true);
+    let brightening = 0, sampled = 0;
+    for (let y = 8; y < height - 8; y++) for (let x = 8; x < width - 8; x++) {
+      const i = (y * width + x) * 4;
+      if (smoothInk[i] < 25) continue;
+      sampled++;
+      for (let channel = 0; channel < 3; channel++) {
+        brightening = Math.max(brightening, smoothGlass[i + channel] - smoothInk[i + channel]);
+      }
+    }
+    check(sampled > 1000, 'Smooth color field exercises the Glass shader', sampled + ' pixels');
+    // Slope-relative reflection keeps glints on thin folds; fluid-glass checks their fade. This field measures 75/255 on Metal, OpenGL, and SwiftShader.
+    check(brightening <= 80, 'Low-density Glass has bounded highlights', 'maximum brightening ' + brightening + '/255');
+    const lit = render(luminous, luminousSurface, true);
+    let directionalDifference = 0;
+    for (let y = 8; y < height - 8; y++) for (let x = 8; x < width - 8; x++) {
+      const i = (y * width + x) * 4;
+      const opposite = ((height - 1 - y) * width + width - 1 - x) * 4;
+      for (let c = 0; c < 3; c++) directionalDifference = Math.max(directionalDifference, Math.abs(lit[i + c] - lit[opposite + c]));
+    }
+    // A symmetric density field gains directional gleam, not just uniform exposure.
+    check(directionalDifference > 3 && directionalDifference < 96, 'Luminous folds respond to directional light', 'opposite-side difference ' + directionalDifference + '/255');
+    check(gl.getError() === gl.NO_ERROR, 'Production display shader renders without WebGL errors');
+  } catch (error) {
+    check(false, error.message);
+  }
+  document.getElementById('summary').textContent = passed + ' passed, ' + failed + ' failed';
+  document.body.dataset.result = failed ? 'failed' : 'passed';
+  gl?.getExtension('WEBGL_lose_context')?.loseContext();
+})();
+</script>
+</html>

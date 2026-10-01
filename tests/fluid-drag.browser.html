@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fluid animated drag comparison</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px; background: #080d14; color: #dcecef; font: 14px/1.5 system-ui; }
+  h1 { margin: 0 0 8px; font-size: 22px; font-weight: 500; }
+  p { color: #aabcc6; }
+  #status { font-variant-numeric: tabular-nums; }
+  #checks { padding-left: 20px; }
+  #checks [data-pass="true"] { color: #9dddb5; }
+  #checks [data-pass="false"] { color: #ff9b91; }
+  #scenes { position: fixed; left: -10000px; top: 0; display: flex; gap: 8px; }
+  #scenes canvas { width: 320px; height: 180px; }
+  .moment { margin: 18px 0 26px; }
+  .moment h2 { margin: 0 0 8px; font-size: 16px; font-weight: 500; }
+  .pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  figure { margin: 0; background: #02060b; border: 1px solid #263540; }
+  figure canvas { display: block; width: 100%; aspect-ratio: 16 / 9; }
+  figcaption { padding: 8px 10px; }
+  .diagnostic { margin: 8px 0 0; font-variant-numeric: tabular-nums; }
+</style>
+<h1>Animated drag comparison</h1>
+<p>Two seeded scenes share the same frozen ambient phase and zero pigment. A vertical pointer stroke enters one scene over 60 ticks, followed by 1200 ticks without input. Pixel differences are diagnostics, not visual-quality thresholds.</p>
+<p id="configuration"></p>
+<p id="status" role="status">Preparing graphics…</p>
+<ol id="checks"></ol>
+<div id="scenes" aria-hidden="true"><canvas></canvas><canvas></canvas></div>
+<main id="snapshots"></main>
+<script>
+(async () => {
+  const status = document.getElementById('status');
+  const checks = document.getElementById('checks');
+  const snapshots = document.getElementById('snapshots');
+  const canvases = [...document.querySelectorAll('#scenes canvas')];
+  const callbacks = new Map();
+  let clock = 0, nextId = 1, failures = 0, readbacks = 0, scenes = [];
+  function queuedFrame(callback) {
+    const id = nextId++;
+    callbacks.set(id, callback);
+    return id;
+  }
+  function cancelQueuedFrame(id) { callbacks.delete(id); }
+  function check(pass, label) {
+    const item = document.createElement('li');
+    item.dataset.pass = String(pass);
+    item.textContent = (pass ? 'PASS · ' : 'FAIL · ') + label;
+    checks.append(item);
+    if (!pass) failures++;
+  }
+  function pixels(canvas, label) {
+    const gl = canvas.getContext('webgl2');
+    const value = new Uint8Array(canvas.width * canvas.height * 4);
+    gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, value);
+    const error = gl.getError();
+    if (error !== gl.NO_ERROR) throw new Error('WebGL error ' + error + ' at ' + label);
+    readbacks++;
+    return value;
+  }
+  function difference(control, dragged) {
+    if (control.length !== dragged.length) throw new Error('Raster sizes differ');
+    let total = 0, changed = 0, peak = 0;
+    for (let i = 0; i < control.length; i += 4) {
+      const r = Math.abs(control[i] - dragged[i]);
+      const g = Math.abs(control[i + 1] - dragged[i + 1]);
+      const b = Math.abs(control[i + 2] - dragged[i + 2]);
+      const largest = Math.max(r, g, b);
+      total += r + g + b;
+      peak = Math.max(peak, largest);
+      if (largest > 8) changed++;
+    }
+    return { mean: total / (control.length / 4 * 3), changed: changed * 100 / (control.length / 4), peak };
+  }
+  function figure(canvas, label) {
+    const container = document.createElement('figure');
+    const copy = document.createElement('canvas');
+    copy.width = canvas.width;
+    copy.height = canvas.height;
+    copy.getContext('2d').drawImage(canvas, 0, 0);
+    const caption = document.createElement('figcaption');
+    caption.textContent = label;
+    container.append(copy, caption);
+    return container;
+  }
+  function snapshot(frame, title) {
+    scenes.forEach(scene => scene.render());
+    const control = pixels(canvases[0], title + ' control');
+    const dragged = pixels(canvases[1], title + ' drag');
+    const delta = difference(control, dragged);
+    const section = document.createElement('section');
+    section.className = 'moment';
+    const heading = document.createElement('h2');
+    heading.textContent = title + ' · tick ' + frame;
+    const pair = document.createElement('div');
+    pair.className = 'pair';
+    pair.append(figure(canvases[0], 'Control'), figure(canvases[1], 'Drag'));
+    const diagnostic = document.createElement('p');
+    diagnostic.className = 'diagnostic';
+    diagnostic.textContent = 'Mean RGB difference ' + delta.mean.toFixed(3) + '/255 · Changed pixels (>8) ' + delta.changed.toFixed(2) + '% · Peak channel difference ' + delta.peak + ' · Drag interactions ' + canvases[1].dataset.interactions;
+    section.append(heading, pair, diagnostic);
+    snapshots.append(section);
+    return { control, dragged, delta };
+  }
+  function pointer(canvas, y, type = 'pointermove') {
+    const rect = canvas.getBoundingClientRect();
+    canvas.dispatchEvent(new PointerEvent(type, {
+      bubbles: true, pointerId: 1, pointerType: 'mouse', isPrimary: true,
+      button: type === 'pointermove' ? -1 : 0, buttons: type === 'pointerup' ? 0 : 1,
+      clientX: rect.left + rect.width * .5,
+      clientY: rect.top + rect.height * y
+    }));
+  }
+  try {
+    if (document.hidden) throw new Error('Open this page in a visible tab');
+    const forceParam = new URLSearchParams(location.search).get('force');
+    const force = forceParam === null ? 1 : Number(forceParam);
+    if (!Number.isFinite(force) || force < 0 || force > 3) throw new Error('force must be between 0 and 3');
+    document.getElementById('configuration').textContent = 'Drag cursor force ' + force + '× (use ?force=3 for the maximum).';
+    const response = await fetch('../studies/fluid-prototype.js', { cache: 'no-store' });
+    if (!response.ok) throw new Error('Could not load the production runtime');
+    const source = await response.text();
+    const create = new Function('requestAnimationFrame', 'cancelAnimationFrame', 'performance',
+      source + '\nreturn window.FluidPrototype.create;')(queuedFrame, cancelQueuedFrame, { now: () => clock });
+    scenes = canvases.map((canvas, index) => create(canvas, {
+      paused: true, ambient: false, seed: 347, tuning: { dyeBrightness: 0, cursorForce: index === 1 ? force : 1 }
+    }));
+    check(canvases.every(canvas => canvas.dataset.state === 'ready'), 'Both production scenes are ready');
+    check(canvases.every(canvas => canvas.width === canvases[0].width && canvas.height === canvases[0].height), 'Raster dimensions match');
+    check(scenes.every(scene => scene.getTuning().dyeBrightness === 0), 'Pigment injection is disabled in both scenes');
+    check(scenes[1].getTuning().cursorForce === force, 'Drag scene uses cursor force ' + force + '×');
+    check(canvases.every(canvas => canvas.dataset.paused === 'true'), 'Initial scenes are paused with ambient phase frozen');
+    const initial = snapshot(0, 'Before drag');
+    check(initial.delta.peak === 0, 'Seeded scenes begin pixel-identical');
+    scenes.forEach(scene => scene.setPaused(false));
+    pointer(canvases[1], .5, 'pointerdown');
+    const snapshotsAt = new Map([
+      [30, 'Mid-drag'], [60, 'End of drag'], [120, 'Coast 1 second'], [180, 'Coast 2 seconds'],
+      [360, 'Coast 5 seconds'], [660, 'Coast 10 seconds'], [1260, 'Coast 20 seconds']
+    ]);
+    for (let frame = 1; frame <= 1260; frame++) {
+      if (frame <= 60) pointer(canvases[1], .5 - .27 * frame / 60);
+      const pending = [...callbacks.entries()];
+      if (pending.length !== 2) throw new Error('Expected two scheduled frames at tick ' + frame + ', got ' + pending.length);
+      pending.forEach(([id]) => callbacks.delete(id));
+      clock = frame * (1000 / 60);
+      pending.forEach(([, callback]) => callback(clock));
+      if (frame === 60) {
+        pointer(canvases[1], .5 - .27, 'pointerup');
+        canvases[1].dispatchEvent(new PointerEvent('pointerleave', { pointerId: 1, pointerType: 'mouse' }));
+      }
+      if (snapshotsAt.has(frame)) snapshot(frame, snapshotsAt.get(frame));
+      if (frame % 10 === 0) {
+        status.textContent = 'Advanced ' + frame + ' / 1260 deterministic ticks';
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+    }
+    scenes.forEach(scene => scene.setPaused(true));
+    scenes.forEach(scene => scene.render());
+    const frozenA = canvases.map((canvas, index) => pixels(canvas, 'paused A ' + index));
+    scenes.forEach(scene => scene.render());
+    const frozenB = canvases.map((canvas, index) => pixels(canvas, 'paused B ' + index));
+    check(frozenA.every((value, index) => difference(value, frozenB[index]).peak === 0), 'Repeated paused renders are pixel-identical');
+    check(canvases.every(canvas => Number(canvas.dataset.frames) === 1260), 'Both scenes advanced 1260 frames');
+    check(Number(canvases[0].dataset.interactions) === 0, 'Control received no pointer input');
+    const interactions = Number(canvases[1].dataset.interactions);
+    check(interactions > 1 && interactions <= 61, 'Drag injected its press vortex and only its 60 held movement ticks (' + interactions + ' interactions)');
+    check(readbacks === 20, 'All ' + readbacks + ' WebGL readbacks completed without errors');
+    status.textContent = failures ? 'FAIL · ' + failures + ' checks failed.' : 'PASS · GPU checks passed. Compare paired images for motion and carry.';
+    document.body.dataset.result = failures ? 'fail' : 'pass';
+  } catch (error) {
+    status.textContent = 'ERROR · ' + error.message;
+    document.body.dataset.result = 'error';
+  } finally {
+    scenes.forEach(scene => scene.dispose());
+  }
+})();
+</script>
+</html>

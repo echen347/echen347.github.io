@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Fluid seed continuity checks</title>
+<style>body{background:#101318;color:#dcecef;font:14px/1.6 system-ui;padding:24px}pre{white-space:pre-wrap}</style>
+<h1>Fluid seed continuity checks</h1><pre id="results">Running…</pre>
+<script>
+(async()=>{
+  const output=document.getElementById('results');
+  const canvas=document.createElement('canvas');canvas.width=256;canvas.height=256;
+  const gl=canvas.getContext('webgl2');
+  const threshold=.015, step=.0001;
+  const phases=[.12,.37,.71,1.13,1.59,2.07,2.53,3.11,3.73,4.29,4.91,5.47];
+  try {
+    if(!gl || !gl.getExtension('EXT_color_buffer_float'))throw new Error('Floating point WebGL unavailable');
+    const source=await(await fetch('../studies/fluid-prototype.js',{cache:'no-store'})).text();
+    const match=source.match(/seed: `([\s\S]*?)`,\s*\w+:/);
+    if(!match)throw new Error('Seed shader not found');
+    function compile(type,code){
+      const shader=gl.createShader(type);gl.shaderSource(shader,code);gl.compileShader(shader);
+      if(!gl.getShaderParameter(shader,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(shader));
+      return shader;
+    }
+    const vertex=compile(gl.VERTEX_SHADER,`#version 300 es
+      out vec2 uv;
+      void main(){vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2);uv=p;gl_Position=vec4(p*2.-1.,0,1);}`);
+    const fragment=compile(gl.FRAGMENT_SHADER,`#version 300 es
+      precision highp float;precision highp sampler2D;
+      in vec2 uv;out vec4 outColor;${match[1]}`);
+    const program=gl.createProgram();gl.attachShader(program,vertex);gl.attachShader(program,fragment);
+    gl.linkProgram(program);
+    if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(program));
+    gl.useProgram(program);gl.bindVertexArray(gl.createVertexArray());
+    function texture(blank=false){
+      const value=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,value);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+      gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA16F,256,256,0,gl.RGBA,gl.HALF_FLOAT,blank?new Uint16Array(256*256*4):null);
+      return value;
+    }
+    const blank=texture(true),result=texture(),target=gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER,target);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,result,0);
+    if(gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE)throw new Error('Seed framebuffer incomplete');
+    gl.viewport(0,0,256,256);
+    gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,blank);
+    gl.uniform1i(gl.getUniformLocation(program,'source'),0);
+    gl.uniform1f(gl.getUniformLocation(program,'aspect'),1);
+    gl.uniform1f(gl.getUniformLocation(program,'amount'),1);
+    gl.uniform1i(gl.getUniformLocation(program,'field'),0);
+    const phaseLocation=gl.getUniformLocation(program,'phase');
+    function render(phase){
+      gl.uniform1f(phaseLocation,phase);gl.drawArrays(gl.TRIANGLES,0,3);
+      const pixels=new Float32Array(256*256*4);
+      gl.readPixels(0,0,256,256,gl.RGBA,gl.FLOAT,pixels);
+      return pixels;
+    }
+    let maximum=0,where='';
+    for(const phase of phases){
+      const before=render(phase),after=render(phase+step);
+      for(let i=0;i<before.length;i+=4)for(let channel=0;channel<3;channel++){
+        const change=Math.abs(after[i+channel]-before[i+channel]);
+        if(change>maximum){maximum=change;where=`phase ${phase}, pixel (${(i/4)%256}, ${Math.floor(i/1024)}), channel ${channel}`;}
+      }
+    }
+    if(gl.getError()!==gl.NO_ERROR)throw new Error('Seed rendering produced a graphics error');
+    const passed=maximum<threshold;
+    output.textContent=`${passed?'PASS':'FAIL'} Full seed RGB continuity: max change ${maximum.toFixed(5)} at ${where}\nExpected below ${threshold} for phase step ${step} across ${phases.length} fixed phases.`;
+    output.dataset.state=passed?'passed':'failed';
+  } catch(error){output.textContent=`FAIL ${error.message}`;output.dataset.state='failed';}
+  gl?.getExtension('WEBGL_lose_context')?.loseContext();
+})();
+</script>
+</html>

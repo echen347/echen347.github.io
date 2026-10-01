@@ -8,7 +8,6 @@
   const label = document.getElementById('view-label');
   const bookIcon = document.getElementById('book-icon');
   const sceneIcon = document.getElementById('scene-icon');
-  const pause = document.getElementById('scene-pause');
   const reset = document.getElementById('scene-reset');
   const controls = document.getElementById('scene-controls');
   const sceneHome = document.getElementById('scene-home');
@@ -37,19 +36,12 @@
   // The two views share one document but retain different scroll positions.
   // Native restoration runs after popstate and would undo our profile position.
   if (!contentPage && 'scrollRestoration' in window.history) window.history.scrollRestoration = 'manual';
-  let fluid = null, view = 'profile', failed = false, suspended = false, modalOpen = false;
-  let userPaused = false, actualPaused = true, syncing = false, listeningToMotion = false;
+  let fluid = null, concert = null, view = 'profile', failed = false, suspended = false, modalOpen = false;
+  let actualPaused = true, syncing = false, listeningToMotion = false;
   let profileScroll = window.scrollY || 0;
 
   function syncPlayback() {
-    if (pause) {
-      pause.disabled = media.matches;
-      pause.textContent = media.matches ? 'Paused' : userPaused ? 'Play' : 'Pause';
-      pause.setAttribute('aria-pressed', String(userPaused || media.matches));
-      pause.setAttribute('aria-label', media.matches ? 'Animation paused for reduced motion' : userPaused ? 'Play animation' : 'Pause animation');
-      pause.title = media.matches ? 'Animation follows your reduced-motion preference.' : '';
-    }
-    const shouldPause = view !== 'scene' || document.hidden || suspended || modalOpen || media.matches || userPaused || failed;
+    const shouldPause = view !== 'scene' || document.hidden || suspended || modalOpen || media.matches || failed;
     if (!fluid || syncing || actualPaused === shouldPause) return;
     syncing = true;
     try {
@@ -98,9 +90,39 @@
     } else toggle.setAttribute('href', view === 'scene' ? '#profile' : '#scene');
   }
 
+  // The entrance's Chaewon concert consumes this renderer; chaewon.js dispatches
+  // the typed trigger to it. It is disposed before the renderer. A page that
+  // stays open also detaches it, so the mode moves to the classic decorations;
+  // an unloading page keeps it attached, so nothing mounts on the way out.
+  function ensureConcert() {
+    if (contentPage || concert || !fluid || !window.ChaewonConcert) return;
+    try {
+      concert = window.ChaewonConcert.create({
+        fluid, canvas, host: scene,
+        header: document.getElementById('site-header'),
+        footer: scene.querySelector?.('.scene-footer') || null
+      });
+    } catch (error) {
+      concert = null;
+      return;
+    }
+    // Attached disabled: showView enables it once the scene is laid out and running.
+    concert.setEnabled(false);
+    window.ChaewonMode?.setConcert?.(concert);
+  }
+
+  function disposeConcert(unloading = false) {
+    if (!concert) return;
+    const controller = concert;
+    concert = null;
+    if (!unloading) window.ChaewonMode?.setConcert?.(null);
+    controller.dispose();
+  }
+
   function fail() {
     if (failed) return;
     failed = true;
+    disposeConcert();
     if (fluid) fluid.dispose();
     fluid = null;
     actualPaused = true;
@@ -118,6 +140,7 @@
       fluid = window.FluidPrototype.create(canvas, {
         paused: true,
         interactive: !contentPage,
+        pauseOnSpace: false,
         seed,
         randomized: true,
         onPauseChange(value) {
@@ -138,6 +161,7 @@
         listeningToMotion = true;
       }
       sceneStatus.hidden = true;
+      ensureConcert();
       return true;
     } catch (error) {
       fail();
@@ -172,16 +196,15 @@
     sceneIcon[inScene ? 'setAttribute' : 'removeAttribute']('hidden', '');
     toggle.setAttribute('aria-label', inScene ? 'Show paper' : 'Show scene');
     toggle.hidden = failed;
+    // The concert measures the header, so the scene is at the top before it starts.
+    if (changed && !contentPage && inScene) window.scrollTo({ top: 0, behavior: 'instant' });
+    // The concert must settle before the renderer pauses; it needs no further frame.
+    concert?.setEnabled(inScene && !failed);
     syncPlayback();
+    window.ChaewonMode?.refresh?.();
     updateLinks();
-    if (changed && !contentPage) window.scrollTo({ top: inScene ? 0 : profileScroll, behavior: 'instant' });
+    if (changed && !contentPage && !inScene) window.scrollTo({ top: profileScroll, behavior: 'instant' });
     if (moveFocus && !failed) toggle.focus({ preventScroll: true });
-  }
-
-  function togglePause() {
-    if (view !== 'scene' || document.hidden || media.matches || failed) return;
-    userPaused = !userPaused;
-    syncPlayback();
   }
 
   toggle.addEventListener('click', event => {
@@ -190,22 +213,14 @@
     showView(view === 'scene' ? 'profile' : 'scene', true);
     writeHash(view, false);
   });
-  pause?.addEventListener('click', togglePause);
   reset?.addEventListener('click', () => {
     if (view !== 'scene' || failed || modalOpen || !fluid) return;
     seed = freshSeed(seed);
     fluid.reset(seed);
+    concert?.reset();
     writeHash(view, true);
     updateLinks();
   });
-  if (!contentPage) {
-    canvas.addEventListener('keydown', event => {
-      if (event.code !== 'Space' && event.key !== ' ') return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      togglePause();
-    }, true);
-  }
   document.addEventListener('keydown', event => {
     if (event.defaultPrevented || modalOpen || event.key !== 'Escape' || view !== 'scene') return;
     event.preventDefault();
@@ -223,7 +238,10 @@
   window.addEventListener('pagehide', event => {
     suspended = true;
     syncPlayback();
-    if (!event.persisted && fluid) fluid.dispose();
+    if (!event.persisted) {
+      disposeConcert(true);
+      if (fluid) fluid.dispose();
+    }
   });
   window.addEventListener('pageshow', () => {
     suspended = false;

@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Fluid motion checks</title>
+<style>
+  body{margin:0;padding:20px;background:#101318;color:#dcecef;font:14px/1.5 system-ui}
+  pre{white-space:pre-wrap}canvas{display:block;background:#02060b;margin:12px 0 24px}
+  #desktop{width:960px;height:540px}#narrow{width:390px;height:600px}
+</style>
+<h1>Fluid motion checks</h1><p id="progress">Loading renderer…</p><pre id="results"></pre>
+<canvas id="desktop"></canvas><canvas id="narrow"></canvas>
+<script>
+(async()=>{
+  const progress=document.getElementById('progress'),output=document.getElementById('results');
+  const lines=[];let passed=0,total=0;
+  function check(ok,label){ok=Boolean(ok);total++;passed+=ok?1:0;lines.push(`${ok?'PASS':'FAIL'} ${label}`);output.textContent=lines.join('\n');}
+  const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+  const script=document.createElement('script');
+  script.src='../studies/fluid-prototype.js?motion='+Date.now();
+  await new Promise((resolve,reject)=>{script.onload=resolve;script.onerror=()=>reject(Error('Renderer did not load'));document.head.append(script);});
+  async function exercise(canvas,label){
+    let scene;
+    try {
+      scene=FluidPrototype.create(canvas,{paused:true,ambient:false,seed:347});
+      const gl=canvas.getContext('webgl2');
+      function frame(){
+        scene.render();
+        const data=new Uint8Array(canvas.width*canvas.height*4);
+        gl.readPixels(0,0,canvas.width,canvas.height,gl.RGBA,gl.UNSIGNED_BYTE,data);
+        return data;
+      }
+      function difference(a,b){let changed=0;for(let i=0;i<a.length;i+=4){
+        if(Math.max(Math.abs(a[i]-b[i]),Math.abs(a[i+1]-b[i+1]),Math.abs(a[i+2]-b[i+2]))>1)changed++;
+      }return changed;}
+      const rect=canvas.getBoundingClientRect();
+      const path=[[.18,.68],[.30,.50],[.60,.44],[.62,.72],[.86,.53]];
+      const send=(type,[x,y],buttons,id=1)=>canvas.dispatchEvent(new PointerEvent(type,{
+        pointerId:id,pointerType:'mouse',isPrimary:true,button:type==='pointermove'?-1:0,buttons,
+        clientX:rect.left+x*rect.width,clientY:rect.top+y*rect.height,bubbles:true
+      }));
+      // Click-only control from the same seed and press point.
+      const control=frame();
+      scene.setPaused(false);send('pointerdown',path[0],1);send('pointerup',path[0],0);scene.setPaused(true);
+      const clickChanged=difference(control,frame());
+      scene.reset(347);
+      const before=frame();
+      scene.setPaused(false);
+      send('pointerdown',path[0],1);
+      for(const point of path.slice(1))send('pointermove',point,1);
+      send('pointerup',path.at(-1),0);
+      scene.setPaused(true);
+      const fresh=frame();
+      check(Number(canvas.dataset.interactions)===5,`${label}: a held curved path reaches the renderer as a press vortex and four segments`);
+      check(difference(before,fresh)>clickChanged,`${label}: the fresh stroke changes more pixels than the click alone`);
+      const pausedFrames=Number(canvas.dataset.frames);
+      await wait(400);
+      const held=frame();
+      check(Number(canvas.dataset.frames)===pausedFrames && difference(fresh,held)===0,
+        `${label}: paused frame stays pixel stable`);
+      scene.setPaused(false);await wait(500);scene.setPaused(true);
+      const evolved=frame();
+      let bright=0,dark=0;
+      for(let i=0;i<evolved.length;i+=4){
+        const value=Math.max(evolved[i],evolved[i+1],evolved[i+2]);
+        bright+=value>50;dark+=value<25;
+      }
+      check(Number(canvas.dataset.frames)>pausedFrames && bright>0 && dark>0 && gl.getError()===gl.NO_ERROR,
+        `${label}: evolved output is visible and has no graphics error`);
+      progress.textContent=`Measuring ${label} frame intervals for 9 seconds…`;
+      const startFrames=Number(canvas.dataset.frames),start=performance.now();
+      let gestures=0,pressed=false;
+      scene.setPaused(false);
+      const startInteractions=Number(canvas.dataset.interactions);
+      // Hold the primary button through the active interval, then release for the quiet one.
+      const movement=setInterval(()=>{
+        const seconds=(performance.now()-start)/1000;
+        if(seconds>=4.5)return;
+        const x=.5+.28*Math.sin(seconds*3.2),y=.5+.22*Math.sin(seconds*4.7+.6);
+        send(pressed?'pointermove':'pointerdown',[x,y],1,2);
+        pressed=true;
+        gestures++;
+      },16);
+      await wait(4500);clearInterval(movement);
+      send('pointerup',[.5,.5],0,2);
+      const accepted=Number(canvas.dataset.interactions)-startInteractions;
+      check(accepted>=gestures*.9,`${label}: the active interval's held strokes were accepted (${accepted} of ${gestures})`);
+      const activeTime=performance.now()-start,activeFrames=Number(canvas.dataset.frames)-startFrames;
+      await wait(4500);scene.setPaused(true);
+      const elapsed=performance.now()-start,frames=Number(canvas.dataset.frames)-startFrames;
+      const quietTime=elapsed-activeTime,quietFrames=frames-activeFrames;
+      const activeInterval=activeFrames>0?activeTime/activeFrames:Infinity;
+      const quietInterval=quietFrames>0?quietTime/quietFrames:Infinity;
+      const css=canvas.getBoundingClientRect();
+      lines.push(`${label}: ${css.width}×${css.height} CSS, ${canvas.width}×${canvas.height} raster; ${gestures} live pointer events`);
+      lines.push(`${label}: active ${activeFrames} frames / ${(activeTime/1000).toFixed(2)} s, ${activeInterval.toFixed(1)} ms; quiet ${quietFrames} frames / ${(quietTime/1000).toFixed(2)} s, ${quietInterval.toFixed(1)} ms`);
+      output.textContent=lines.join('\n');
+      check(gestures>0 && activeFrames>0 && quietFrames>0 && elapsed>=8000 && elapsed<=10000,
+        `${label}: 8 to 10 second active and quiet frame samples completed`);
+    } catch(error){check(false,`${label}: ${error.message}`);}
+    finally{scene?.dispose();}
+  }
+  try {
+    await exercise(document.getElementById('desktop'),'Desktop');
+    await exercise(document.getElementById('narrow'),'Narrow');
+  } catch(error){check(false,error.message);}
+  progress.textContent=`${passed}/${total} checks passed`;
+  output.textContent=lines.join('\n');
+  output.dataset.state=passed===total?'passed':'failed';
+  window.__fluidMotionResult={passed,total,state:output.dataset.state,lines};
+})();
+</script></html>

@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fluid click and drag checks</title>
+<style>
+  body { margin: 0; padding: 24px; background: #101318; color: #e5edf2; font: 14px/1.6 system-ui; }
+  #scenes { display: flex; gap: 16px; flex-wrap: wrap; }
+  figure { margin: 0; }
+  canvas { display: block; width: 420px; height: 260px; max-width: 100%; border: 1px solid #46505b; }
+  li[data-pass="false"] { color: #ff9999; }
+  li[data-pass="true"] { color: #93dab3; }
+</style>
+<h1>Fluid click and drag checks</h1>
+<p id="summary">Running…</p>
+<div id="scenes">
+  <figure><canvas id="control" aria-label="Untouched comparison"></canvas><figcaption>Untouched, one second</figcaption></figure>
+  <figure><canvas id="interactive" aria-label="Click vortex comparison"></canvas><figcaption>One click, one second</figcaption></figure>
+</div>
+<ol id="results"></ol>
+<script>
+(async () => {
+  const control = document.querySelector('#control');
+  const canvas = document.querySelector('#interactive');
+  const callbacks = new Map();
+  const scenes = [];
+  let clock = 0, nextId = 0, passed = 0, failed = 0;
+  const check = (condition, label) => {
+    const item = document.createElement('li');
+    item.dataset.pass = String(Boolean(condition));
+    item.textContent = `${condition ? 'PASS' : 'FAIL'}: ${label}`;
+    document.querySelector('#results').append(item);
+    condition ? passed++ : failed++;
+  };
+  const count = () => Number(canvas.dataset.interactions);
+  const pointer = (type, x = .5, y = .5, extra = {}) => {
+    const bounds = canvas.getBoundingClientRect();
+    canvas.dispatchEvent(new PointerEvent(type, {
+      bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse',
+      clientX: bounds.left + bounds.width * x, clientY: bounds.top + bounds.height * y,
+      button: type === 'pointermove' ? -1 : 0,
+      buttons: type === 'pointerdown' ? 1 : 0, ...extra
+    }));
+  };
+  const pixels = target => {
+    const gl = target.getContext('webgl2');
+    const output = new Uint8Array(target.width * target.height * 4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.readPixels(0, 0, target.width, target.height, gl.RGBA, gl.UNSIGNED_BYTE, output);
+    if (gl.getError() !== gl.NO_ERROR) throw new Error('WebGL pixel readback failed');
+    return output;
+  };
+  const changed = (a, b, threshold = 3) => {
+    let amount = 0;
+    for (let i = 0; i < a.length; i += 4) {
+      if (Math.max(Math.abs(a[i] - b[i]), Math.abs(a[i + 1] - b[i + 1]), Math.abs(a[i + 2] - b[i + 2])) > threshold) amount++;
+    }
+    return amount / (a.length / 4);
+  };
+  const step = () => {
+    clock += 1000 / 60;
+    const batch = [...callbacks.values()];
+    callbacks.clear();
+    if (batch.length !== 2) throw new Error(`Expected two active scenes, found ${batch.length}`);
+    batch.forEach(callback => callback(clock));
+  };
+  try {
+    if (document.hidden) throw new Error('Open the test in a visible tab');
+    const response = await fetch('../studies/fluid-prototype.js', { cache: 'no-store' });
+    if (!response.ok) throw new Error('Cannot load the fluid renderer');
+    const create = new Function('requestAnimationFrame', 'cancelAnimationFrame', 'performance',
+      await response.text() + '\nreturn window.FluidPrototype.create;')(
+      callback => { const id = ++nextId; callbacks.set(id, callback); return id; },
+      id => callbacks.delete(id), { now: () => clock });
+    scenes.push(create(control, { paused: false, seed: 347, interactive: false }));
+    scenes.push(create(canvas, { paused: false, seed: 347 }));
+    check(control.dataset.state === 'ready' && canvas.dataset.state === 'ready', 'Both real WebGL renderers initialize');
+    check(changed(pixels(control), pixels(canvas), 0) === 0, 'Matching seeds start with matching pixels');
+
+    pointer('pointermove', .1, .5);
+    pointer('pointermove', .8, .5);
+    scenes[1].render();
+    check(count() === 0 && changed(pixels(control), pixels(canvas), 0) === 0, 'Unpressed mouse hover changes neither input count nor pixels');
+
+    pointer('pointerdown');
+    check(count() === 1, 'One primary click immediately creates one vortex interaction');
+    pointer('pointerup');
+    step();
+    const clickShare = changed(pixels(control), pixels(canvas));
+    check(clickShare > .0002 && clickShare < .25,
+      `One click visibly changes a local region within one frame (${(clickShare * 100).toFixed(3)}%)`);
+    for (let i = 1; i < 60; i++) step();
+    const evolvedShare = changed(pixels(control), pixels(canvas));
+    check(evolvedShare > .001, `A released click keeps affecting the flowing material (${(evolvedShare * 100).toFixed(3)}%)`);
+    check(count() === 1, 'A released click does not repeat injection as the simulation advances');
+
+    pointer('pointermove', .8, .2);
+    pointer('pointermove', .9, .8);
+    check(count() === 1, 'Mouse movement after release does not stir');
+    pointer('pointerdown', .2, .4);
+    pointer('pointermove', .45, .5, { buttons: 1 });
+    pointer('pointermove', .7, .6, { buttons: 1 });
+    check(count() === 4, 'Holding primary click adds continuous drag input');
+    pointer('pointerup', .7, .6);
+    pointer('pointermove', .9, .7);
+    check(count() === 4, 'Releasing primary click stops drag input');
+
+    pointer('pointerdown', .1, .2, { button: 2, buttons: 2 });
+    pointer('pointermove', .8, .7, { buttons: 2 });
+    pointer('pointerup', .8, .7, { button: 2 });
+    check(count() === 4, 'The secondary mouse button creates neither vortex nor stroke');
+    pointer('pointerdown', .1, .2);
+    pointer('pointercancel', .1, .2);
+    pointer('pointermove', .8, .7, { buttons: 1 });
+    check(count() === 5, 'Pointer cancellation discards the held stroke');
+    pointer('pointerdown', .1, .2);
+    pointer('lostpointercapture', .1, .2);
+    pointer('pointermove', .8, .7, { buttons: 1 });
+    check(count() === 6, 'Lost pointer capture discards the held stroke');
+    pointer('pointerdown', .1, .2);
+    window.dispatchEvent(new Event('blur'));
+    pointer('pointermove', .8, .7, { buttons: 1 });
+    check(count() === 7, 'Window blur discards the held stroke');
+    pointer('pointerdown', .1, .2);
+    pointer('pointermove', .4, .4, { buttons: 0 });
+    pointer('pointermove', .8, .7, { buttons: 1 });
+    check(count() === 8, 'A move reporting release clears a missed pointer-up event');
+
+    pointer('pointerdown', .2, .4, { pointerType: 'touch', pointerId: 5 });
+    pointer('pointermove', .6, .5, { pointerType: 'touch', pointerId: 5, buttons: 1 });
+    pointer('pointerup', .6, .5, { pointerType: 'touch', pointerId: 5 });
+    check(count() === 10, 'A touch press creates a vortex and its held movement stirs');
+    pointer('pointermove', .8, .7, { pointerType: 'touch', pointerId: 5 });
+    check(count() === 10, 'A released touch cannot stir');
+
+    scenes[1].setPaused(true);
+    scenes[1].render();
+    const frozen = pixels(canvas);
+    pointer('pointerdown');
+    pointer('pointermove', .8, .7, { buttons: 1 });
+    pointer('pointerdown', .2, .4, { pointerType: 'touch', pointerId: 6 });
+    pointer('pointermove', .6, .5, { pointerType: 'touch', pointerId: 6, buttons: 1 });
+    canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', code: 'ArrowRight', bubbles: true, cancelable: true }));
+    scenes[1].render();
+    check(count() === 10 && changed(frozen, pixels(canvas), 0) === 0,
+      'Internal pause blocks mouse, touch, and arrow input without changing pixels');
+    scenes[1].setPaused(false);
+    pointer('pointermove', .9, .7, { buttons: 1 });
+    check(count() === 10, 'Resuming does not reconnect a stale held stroke');
+
+    // Restore the comparison image after the input-only assertions.
+    scenes[1].reset(347);
+    scenes[0].reset(347);
+    pointer('pointerdown'); pointer('pointerup');
+    for (let i = 0; i < 60; i++) step();
+    scenes.forEach(scene => scene.setPaused(true));
+  } catch (error) {
+    check(false, error.message);
+  } finally {
+    document.querySelector('#summary').textContent = `${passed} passed, ${failed} failed`;
+    document.body.dataset.result = failed ? 'failed' : 'passed';
+    window.addEventListener('pagehide', () => scenes.forEach(scene => scene.dispose()), { once: true });
+  }
+})();
+</script>
+</html>

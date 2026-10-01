@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Fluid optical sampling checks</title>
+<style>
+  body { background: #101318; color: #dcecef; font: 14px/1.6 system-ui; padding: 24px; }
+  li[data-pass="false"] { color: #ff9999; }
+  li[data-pass="true"] { color: #93dab3; }
+</style>
+<h1>Fluid optical sampling checks</h1>
+<ol id="results"></ol>
+<p id="summary">Running…</p>
+<script>
+(async () => {
+  let passed = 0, failed = 0;
+  const canvas = document.createElement('canvas');
+  const gl = canvas.getContext('webgl2', { antialias: false });
+  const check = (condition, label) => {
+    const item = document.createElement('li');
+    item.dataset.pass = String(Boolean(condition));
+    item.textContent = `${condition ? 'PASS' : 'FAIL'}: ${label}`;
+    document.querySelector('#results').append(item);
+    condition ? passed++ : failed++;
+  };
+  try {
+    if (!gl || !gl.getExtension('EXT_color_buffer_float')) throw new Error('Floating-point WebGL2 unavailable');
+    const response = await fetch('../studies/fluid-prototype.js', { cache: 'no-store' });
+    if (!response.ok) throw new Error('Production renderer unavailable');
+    const source = await response.text();
+    const vertex = source.match(/const VERTEX = `([\s\S]*?)`;/)?.[1];
+    const header = source.match(/const HEADER = `([\s\S]*?)`;/)?.[1];
+    const shaders = Object.fromEntries([...source.matchAll(/(\w+): `([\s\S]*?)`\s*[,}]/g)].map(match => [match[1], match[2]]));
+    const composeBody = source.match(/function composeLight\(\) \{([\s\S]*?)\n    \}\n    function simulation\(/)?.[1];
+    if (!vertex || !header || !shaders.seed || !composeBody) throw new Error('Production optical path unavailable');
+    const programs = new Map();
+    function compile(type, code) {
+      const shader = gl.createShader(type);
+      gl.shaderSource(shader, code);
+      gl.compileShader(shader);
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(shader));
+      return shader;
+    }
+    function program(body) {
+      const value = gl.createProgram();
+      const v = compile(gl.VERTEX_SHADER, vertex), f = compile(gl.FRAGMENT_SHADER, header + body);
+      gl.attachShader(value, v); gl.attachShader(value, f); gl.linkProgram(value);
+      gl.deleteShader(v); gl.deleteShader(f);
+      if (!gl.getProgramParameter(value, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(value));
+      return value;
+    }
+    function texture(width, height, sample) {
+      const value = gl.createTexture(), pixels = new Float32Array(width * height * 4);
+      for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) pixels.set(sample(x, y), 4 * (y * width + x));
+      gl.bindTexture(gl.TEXTURE_2D, value);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, width, height, 0, gl.RGBA, gl.FLOAT, pixels);
+      return { texture: value, width, height };
+    }
+    function target(width, height, precise = false) {
+      const result = texture(width, height, () => [0, 0, 0, 1]);
+      if (precise) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, width, height, 0, gl.RGBA, gl.FLOAT, null);
+      result.framebuffer = gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, result.framebuffer);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, result.texture, 0);
+      if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error('Optical fixture framebuffer incomplete');
+      return result;
+    }
+    function bindTexture(slot, value) {
+      gl.activeTexture(gl.TEXTURE0 + slot);
+      gl.bindTexture(gl.TEXTURE_2D, value.texture);
+    }
+    function use(name, uniforms) {
+      if (!programs.has(name)) {
+        if (!shaders[name]) throw new Error('Production shader unavailable: ' + name);
+        programs.set(name, program(shaders[name]));
+      }
+      const value = programs.get(name);
+      gl.useProgram(value);
+      for (const [key, setting] of Object.entries(uniforms)) {
+        const location = gl.getUniformLocation(value, key);
+        if (location === null) continue;
+        if (Array.isArray(setting)) {
+          if (setting.length === 2) gl.uniform2f(location, ...setting);
+          else gl.uniform3f(location, ...setting);
+        } else if (['source', 'deformation', 'field', 'glass'].includes(key)) gl.uniform1i(location, setting);
+        else gl.uniform1f(location, setting);
+      }
+    }
+    function draw(value) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, value.framebuffer);
+      gl.viewport(0, 0, value.width, value.height);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
+    function read(value) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, value.framebuffer);
+      const pixels = new Float32Array(value.width * value.height * 4);
+      gl.readPixels(0, 0, value.width, value.height, gl.RGBA, gl.FLOAT, pixels);
+      return pixels;
+    }
+    gl.bindVertexArray(gl.createVertexArray());
+    const style = { waveA: [0, .4, .5], waveB: [.09, 800, 1], flowSpeed: .018,
+      tintA: [.045, .31, .56], tintB: [1, .43, .12], tintMist: [.54, .72, .82] };
+
+    // Execute the production pass routing with a known six-cell coordinate ripple.
+    // This catches sparse blur lobes that pass solver-grid detail into the strands.
+    const width = 96, height = 64;
+    const deformation = texture(width, height, x => [.1 + .02 * Math.cos(2 * Math.PI * x / 6), 0, 0, 1]);
+    const dye = texture(width, height, () => [0, 0, 0, 1]);
+    const opticalA = target(width, height), opticalB = target(width, height), composition = target(width, height);
+    canvas.width = width; canvas.height = height;
+    new Function('bindTexture', 'use', 'draw', 'deformation', 'opticalA', 'opticalB', 'composition',
+      'simWidth', 'simHeight', 'canvas', 'dye', 'material', 'lightPhase', 'lightStyle', 'streamTime', composeBody)(
+      bindTexture, use, draw, { read: deformation }, opticalA, opticalB, composition,
+      width, height, canvas, { read: dye }, 'glass', 0, style, 0);
+    const smoothed = read(opticalA);
+    let error = 0, count = 0;
+    for (let x = 18; x < 78; x++) {
+      const value = smoothed[(32 * width + x) * 4] - .1;
+      error += value * value; count++;
+    }
+    const gain = Math.sqrt(error / count) / (.02 / Math.sqrt(2));
+    check(gain < .05, `Production optical smoothing attenuates a six-cell ripple below 5% (gain ${gain.toFixed(5)})`);
+
+    // Change only the seed shader's final output to inspect its transported
+    // coordinates. Its production deformation reconstruction stays untouched.
+    const seedOutput = 'outColor=vec4(wake+light*amount,1);';
+    if (shaders.seed.split(seedOutput).length !== 2) throw new Error('Production seed output could not be instrumented');
+    shaders.coordinateProbe = shaders.seed.replace(seedOutput, 'outColor=vec4(p,0,1);');
+    const coarse = texture(32, 32, x => [.002 * (x - 16) * (x - 16), 0, 0, 1]);
+    const probe = target(1024, 32, true);
+    bindTexture(0, dye); bindTexture(1, coarse);
+    use('coordinateProbe', { source: 0, deformation: 1, warp: 1, aspect: 1, phase: 0, amount: 1, field: 0, glass: 0, ...style });
+    draw(probe);
+    const positions = read(probe);
+    const shift = x => positions[(16 * 1024 + x) * 4] - ((x + .5) / 1024 - .5);
+    check(shift(400) > .02 && shift(400) < .05 && Math.abs(shift(528)) < .003,
+      'Seed transport preserves the nonconstant bending field instead of flattening it');
+    const leftSlope = (shift(527) - shift(526)) * 1024;
+    const rightSlope = (shift(529) - shift(528)) * 1024;
+    const slopeJump = Math.abs(rightSlope - leftSlope);
+    check(slopeJump < .02,
+      `Seed transport has no coarse-cell slope kink (left ${leftSlope.toFixed(5)}, right ${rightSlope.toFixed(5)}, jump ${slopeJump.toFixed(5)})`);
+    check(gl.getError() === gl.NO_ERROR, 'Optical sampling checks have no WebGL errors');
+  } catch (error) {
+    check(false, error.message);
+  }
+  document.querySelector('#summary').textContent = `${passed} passed, ${failed} failed`;
+  document.body.dataset.result = failed ? 'failed' : 'passed';
+  gl?.getExtension('WEBGL_lose_context')?.loseContext();
+})();
+</script>
+</html>

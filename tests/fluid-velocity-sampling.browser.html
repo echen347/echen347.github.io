@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Fluid velocity sampling checks</title>
+<style>body{background:#101318;color:#dcecef;font:14px/1.6 system-ui;padding:24px}pre{white-space:pre-wrap}</style>
+<h1>Fluid velocity sampling checks</h1>
+<p>The production advection shader transports a high-resolution dye ramp through controlled coarse velocity fields.</p>
+<pre id="results">Running…</pre>
+<script>
+(async()=>{
+  const output=document.getElementById('results'),lines=[];
+  let passed=0,total=0;
+  function check(ok,label){total++;passed+=Number(ok);lines.push((ok?'PASS ':'FAIL ')+label);}
+  const canvas=document.createElement('canvas'),gl=canvas.getContext('webgl2');
+  try {
+    if(!gl||!gl.getExtension('EXT_color_buffer_float'))throw new Error('Floating-point WebGL2 unavailable');
+    const response=await fetch('../studies/fluid-prototype.js',{cache:'no-store'});
+    if(!response.ok)throw new Error('Production shader source unavailable');
+    const source=await response.text();
+    const vertex=source.match(/const VERTEX = `([\s\S]*?)`;/)?.[1];
+    const header=source.match(/const HEADER = `([\s\S]*?)`;/)?.[1];
+    const advection=source.match(/advection:\s*`([\s\S]*?)`\s*,/)?.[1];
+    if(!vertex||!header||!advection)throw new Error('Production advection shader unavailable');
+    function compile(type,code){const s=gl.createShader(type);gl.shaderSource(s,code);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s));return s;}
+    const program=gl.createProgram(),v=compile(gl.VERTEX_SHADER,vertex),f=compile(gl.FRAGMENT_SHADER,header+advection);
+    gl.attachShader(program,v);gl.attachShader(program,f);gl.linkProgram(program);gl.deleteShader(v);gl.deleteShader(f);
+    if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(program));
+    gl.bindVertexArray(gl.createVertexArray());
+    function texture(w,h,make){
+      const t=gl.createTexture(),data=new Float32Array(w*h*4);
+      for(let y=0;y<h;y++)for(let x=0;x<w;x++)data.set(make(x,y),4*(y*w+x));
+      gl.bindTexture(gl.TEXTURE_2D,t);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+      gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA16F,w,h,0,gl.RGBA,gl.FLOAT,data);
+      return t;
+    }
+    function render(dye,velocity,w,h){
+      const result=texture(w,h,()=>[0,0,0,1]),fb=gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER,fb);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,result,0);
+      if(gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE)throw new Error('Advection framebuffer incomplete');
+      gl.useProgram(program);
+      gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,velocity);
+      gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,dye);
+      gl.uniform1i(gl.getUniformLocation(program,'velocity'),0);
+      gl.uniform1i(gl.getUniformLocation(program,'source'),1);
+      gl.uniform2f(gl.getUniformLocation(program,'texel'),1/8,1/8);
+      gl.uniform1f(gl.getUniformLocation(program,'dt'),.5);
+      gl.uniform1f(gl.getUniformLocation(program,'dissipation'),0);
+      gl.viewport(0,0,w,h);gl.drawArrays(gl.TRIANGLES,0,3);
+      const pixels=new Float32Array(w*h*4);
+      gl.readPixels(0,0,w,h,gl.RGBA,gl.FLOAT,pixels);
+      if(gl.getError()!==gl.NO_ERROR)throw new Error('Advection readback failed');
+      gl.deleteFramebuffer(fb);gl.deleteTexture(result);
+      return pixels;
+    }
+    const width=512,height=16;
+    const dye=texture(width,height,x=>[(x+.5)/width,0,0,1]);
+    const coarseRamp=texture(8,8,x=>[(x+.5)/8,0,0,1]);
+    const flow=make=>texture(8,8,x=>[make(x),0,0,1]);
+    const sample=(pixels,w,x,y)=>pixels[(y*w+x)*4];
+    const constant=render(dye,flow(()=>2),width,height);
+    const constantX=256,constantExpected=(constantX+.5)/width-.125;
+    const constantError=Math.abs(sample(constant,width,constantX,8)-constantExpected);
+    check(constantError<.002,'Constant velocity preserves exact backtrace ('+constantError.toFixed(5)+' error)');
+    const linear=render(dye,flow(x=>.4*(x-3.5)),width,height);
+    const linearX=340,u=(linearX+.5)/width,linearExpected=u-.5*(.4*(8*u-4))/8;
+    const linearError=Math.abs(sample(linear,width,linearX,8)-linearExpected);
+    check(linearError<.002,'Linear velocity preserves its interior backtrace ('+linearError.toFixed(5)+' error)');
+    const alternating=flow(x=>x%2?4:-4);
+    const nonlinear=render(dye,alternating,width,height);
+    let impulse=0;
+    for(let coarse=2;coarse<=5;coarse++){
+      const center=(coarse+.5)*width/8-.5;
+      for(let x=Math.floor(center)-2;x<=Math.ceil(center)+2;x++){
+        const second=sample(nonlinear,width,x-1,8)-2*sample(nonlinear,width,x,8)+sample(nonlinear,width,x+1,8);
+        impulse=Math.max(impulse,Math.abs(second));
+      }
+    }
+    check(impulse<.002,'Nonlinear coarse velocity has no concentrated high-resolution slope break ('+impulse.toFixed(5)+' second difference)');
+    let bounded=true;
+    for(let y=0;y<height;y++)for(let x=0;x<width;x++){
+      const value=sample(nonlinear,width,x,y);
+      if(!Number.isFinite(value)||value<-.001||value>1.001)bounded=false;
+    }
+    check(bounded,'Transported ramp remains finite and bounded');
+    const lowres=render(coarseRamp,flow(x=>x%2?.4:-.4),8,8);
+    const lowresValue=sample(lowres,8,3,4);
+    check(Math.abs(lowresValue-.4125)<.003,'Low-resolution solver retains its bilinear point sample ('+lowresValue.toFixed(5)+')');
+    check(gl.getError()===gl.NO_ERROR,'Velocity sampling draws have no WebGL errors');
+  }catch(error){check(false,error.message);}
+  gl?.getExtension('WEBGL_lose_context')?.loseContext();
+  output.textContent=lines.join('\n')+'\n'+passed+'/'+total+' passed';
+  output.dataset.state=passed===total?'passed':'failed';
+})();
+</script>
+</html>

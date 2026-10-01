@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Glass luminosity aging</title>
+<style>
+  :root{color-scheme:dark}
+  body{margin:0;padding:20px;background:#101318;color:#dcecef;font:14px/1.45 system-ui}
+  h1{font-size:22px;font-weight:600;margin:0 0 8px}
+  p{max-width:78ch;color:#abbec9;margin:0 0 14px}
+  #status{color:#84ccd4;margin-bottom:14px}
+  .grid{display:grid;grid-template-columns:95px repeat(2,minmax(0,1fr));gap:10px;max-width:1400px;align-items:start}
+  .head{font-weight:600;padding-bottom:4px}.age{padding-top:12px;color:#abbec9}
+  figure{margin:0;background:#02060b;border:1px solid #2a3e47}
+  img{display:block;width:100%;aspect-ratio:16/9;object-fit:contain}
+  figcaption{padding:5px 8px;color:#abbec9;font:12px/1.4 ui-monospace,SFMono-Regular,monospace}
+  pre{white-space:pre-wrap;color:#abbec9;margin-top:16px}
+  #stage{position:absolute;left:-200vw;top:0;width:640px;height:360px;visibility:hidden}
+  @media(max-width:760px){body{padding:12px}.grid{grid-template-columns:65px repeat(2,minmax(0,1fr));gap:5px}.age{font-size:12px}figcaption{font-size:10px}}
+</style>
+<h1>Glass luminosity aging</h1>
+<p id="description">Seed 347 and the same 40-step S gesture in both columns. Ambient sheets are disabled only in this diagnostic so the cursor wake stays visible. The baseline freezes the previous lighting; the candidate uses the production shaders.</p>
+<div id="status">Preparing matched renderers…</div>
+<div class="grid" id="grid">
+  <div></div><div class="head" id="left-heading">Frozen baseline</div><div class="head" id="right-heading">Production candidate</div>
+</div>
+<pre id="results"></pre><canvas id="stage"></canvas>
+
+<script type="text/plain" id="frozen-seed">uniform sampler2D source;
+      uniform sampler2D deformation;
+      uniform float warp;
+      uniform float aspect;
+      uniform float phase;
+      uniform float amount;
+      uniform int field;
+      uniform int glass;
+      float hash(vec2 p) { return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+      float noise(vec2 p) {
+        vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
+        return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+1.0),f.x),f.y);
+      }
+      float sinc(float x) {
+        return abs(x)<.001 ? 1.0-x*x/6.0 : sin(x)/x;
+      }
+      float filteredPulse(float phase,vec2 footprint,int power) {
+        // Integrate raised-cosine harmonics across the pixel's rectangular footprint.
+        float coefficient=power==10 ? .176197052001953 : .10257817300857;
+        float value=coefficient;
+        float previous=1.0, current=cos(phase), cosine=current;
+        for(int k=1;k<=20;k++) {
+          if(k>power) break;
+          coefficient*=float(power-k+1)/float(power+k);
+          float frequency=float(k);
+          // Box integration alone still aliases harmonics above the grid limit.
+          float pixelFrequency=max(abs(footprint.x),abs(footprint.y))*frequency;
+          if(pixelFrequency>=3.141592654) break;
+          float bandlimit=1.0-smoothstep(2.042035225,3.141592654,pixelFrequency);
+          value+=2.0*coefficient*current*sinc(footprint.x*frequency*.5)*sinc(footprint.y*frequency*.5)*bandlimit;
+          float next=2.0*cosine*current-previous;
+          previous=current;current=next;
+        }
+        return clamp(value,0.0,1.0);
+      }
+      void main() {
+        vec2 p=(uv-.5)*vec2(aspect,1.0);
+        p/=min(aspect,1.0);
+        float angle=-.19+.10*sin(phase);
+        p=mat2(cos(angle),-sin(angle),sin(angle),cos(angle))*p;
+        if(field==1) {
+          vec2 v=vec2(0);
+          for(int i=0;i<3;i++) {
+            float j=float(i);
+            vec2 d=p-vec2(-.36+.35*j,.08*cos(j*2.7+phase));
+            float turn=i==1?-1.0:1.0;
+            v+=turn*vec2(-d.y,d.x)*4.0/(dot(d,d)+.026);
+          }
+          outColor=vec4(v,0,1); return;
+        }
+        if(warp>0.0) {
+          // Evaluate the initial pattern at its transported material coordinates.
+          vec2 shift=warp*texture(deformation,uv).xy;
+          p+=mat2(cos(angle),-sin(angle),sin(angle),cos(angle))*shift;
+        }
+        vec3 light=vec3(0);
+        for(int i=0;i<3;i++) {
+          float j=float(i);
+          vec2 q=p;
+          q.y+=.035*sin(q.x*5.0+phase+j);
+          float bend=.13*sin(q.x*4.0+j*.85+phase*.3)+.075*sin(q.x*7.0-j);
+          float cross=q.y-bend+(j-1.0)*.09;
+          float width=.07+.025*cos(q.x*6.0+j*2.0);
+          float sheet=exp(-pow(abs(cross)/width,4.0));
+          sheet*=exp(-pow(abs(q.x)/(.63+.04*j),6.0));
+          float turbulence=noise(q*9.0+phase)*.6+noise(q*23.0+j)*.15;
+          float strand=cross*920.0+sin(q.x*8.0+j)*5.0+turbulence*9.0;
+          vec2 footprint=vec2(dFdx(strand),dFdy(strand));
+          float line=filteredPulse(strand,footprint,10);
+          float core=filteredPulse(strand,footprint,30);
+          // Continuous amplitude avoids brightness jumps between adjacent strands.
+          float pulse=.18+.82*pow(noise(vec2(q.x*4.0+phase*.4,strand/6.2831853*.71+j*5.0)),2.0);
+          vec3 tint=mix(vec3(.045,.31,.56),vec3(1.0,.43,.12),smoothstep(-.35,.40,q.x+.22*sin(phase)));
+          tint=mix(tint,vec3(.54,.72,.82),.16+.14*sin(j*2.4));
+          light+=sheet*pulse*(tint*(.018+line*4.0)+vec3(.92,.91,.85)*core*1.5);
+        }
+        vec3 wake=max(texture(source,uv).rgb,vec3(0));
+        if(glass==1) {
+          // Dye already fades in transport. Keep its emission gain as it thins.
+          float density=dot(wake,vec3(.25,.55,.20));
+          float emission=4.0+3.0*smoothstep(.09,.28,density);
+          wake*=emission;
+        }
+        outColor=vec4(wake+light*amount,1);
+      }</script>
+<script type="text/plain" id="frozen-bloom">uniform sampler2D dye;
+      uniform vec2 texel;
+      void main() {
+        vec3 c = texture(dye,uv).rgb;
+        c += texture(dye,uv+vec2(texel.x,0)).rgb;
+        c += texture(dye,uv-vec2(texel.x,0)).rgb;
+        c += texture(dye,uv+vec2(0,texel.y)).rgb;
+        c += texture(dye,uv-vec2(0,texel.y)).rgb;
+        c *= 0.2;
+        outColor = vec4(max(c-vec3(0.30),0.0),1);
+      }</script>
+<script type="text/plain" id="frozen-display">uniform sampler2D dye;
+      uniform sampler2D bloom;
+      uniform sampler2D wideBloom;
+      uniform sampler2D surface;
+      uniform vec2 texel;
+      uniform vec2 surfaceTexel;
+      uniform int glass;
+      uniform float glowStrength;
+      void main() {
+        vec3 pigment = max(texture(dye,uv).rgb,vec3(0));
+        vec3 color = pigment;
+        if (glass == 1) {
+          float thickness=max(texture(surface,uv).r,0.0);
+          float l=texture(surface,uv-vec2(surfaceTexel.x,0)).r;
+          float r=texture(surface,uv+vec2(surfaceTexel.x,0)).r;
+          float b=texture(surface,uv-vec2(0,surfaceTexel.y)).r;
+          float t=texture(surface,uv+vec2(0,surfaceTexel.y)).r;
+          float shortTexel=max(max(surfaceTexel.x,surfaceTexel.y),1e-5);
+          vec2 slope=vec2(r-l,t-b)/(2.0*shortTexel);
+          vec3 normal=normalize(vec3(-slope*.12,1.0));
+          float coverage=smoothstep(.006,.16,thickness);
+          float fresnel=.04+.96*pow(1.0-normal.z,5.0);
+
+          // Screen-space transmission through the broad surface, not the strands.
+          vec2 shift=normal.xy*(.012+.010*thickness)*coverage*surfaceTexel/shortTexel;
+          vec2 margin=texel*.5;
+          vec3 transmitted=vec3(
+            texture(dye,clamp(uv+shift*.975,margin,vec2(1)-margin)).r,
+            texture(dye,clamp(uv+shift,margin,vec2(1)-margin)).g,
+            texture(dye,clamp(uv+shift*1.025,margin,vec2(1)-margin)).b);
+          vec3 absorption=exp(-thickness*vec3(.28,.10,.04));
+          color=mix(pigment,transmitted*absorption,.58*coverage);
+          color*=1.0-.10*coverage*thickness/(.2+thickness);
+
+          // Two broad studio lights reflect as narrow moving glints on the folds.
+          vec3 reflected=reflect(vec3(0,0,-1),normal);
+          float cool=exp(-pow((reflected.x+.34)/.22,2.0)-pow((reflected.y-.58)/.65,2.0));
+          float warm=exp(-pow((reflected.x-.55)/.16,2.0)-pow((reflected.y+.30)/.60,2.0));
+          vec3 reflection=vec3(.82,.95,1.08)*3.4*cool+vec3(1.1,.64,.36)*2.6*warm;
+          // Smoothed surface normals extend beyond the visible fluid. Limit their
+          // reflections by local material support without thresholding thin edges.
+          float localHeight=1.0-exp(-dot(pigment,vec3(.25,.55,.20))*.65);
+          float reflectionSupport=clamp(localHeight/max(thickness,.006),0.0,1.0);
+          color+=coverage*reflectionSupport*fresnel*reflection;
+        }
+        color=max(color-vec3(.008),vec3(0));
+        color += glowStrength*(texture(bloom,uv).rgb * .24 + texture(wideBloom,uv).rgb * .40);
+        color += vec3(.0004,.0012,.0020);
+        color = vec3(1.0)-exp(-color*1.15);
+        color = pow(color,vec3(0.454545));
+        outColor = vec4(color,1);
+      }</script>
+<script>
+(async()=>{
+  const status=document.getElementById('status'),results=document.getElementById('results');
+  const canvas=document.getElementById('stage'),grid=document.getElementById('grid');
+  const nativeRAF=window.requestAnimationFrame,nativeCancel=window.cancelAnimationFrame;
+  const pending=new Map();let nextId=1,scene;
+  const ages=[['fresh',40],['4s',160],['8s',280],['12s',400],['40s',1240]];
+  const glowMode=new URLSearchParams(location.search).has('glow');
+  const opticsMode=new URLSearchParams(location.search).has('optics');
+  window.requestAnimationFrame=callback=>{const id=nextId++;pending.set(id,callback);return id;};
+  window.cancelAnimationFrame=id=>pending.delete(id);
+  function advance(now){
+    const callbacks=[...pending.values()];pending.clear();
+    if(callbacks.length!==1)throw new Error(`Expected one scheduled frame, got ${callbacks.length}`);
+    callbacks[0](now);
+  }
+  function factory(source){(0,eval)(source);return window.FluidPrototype;}
+  function shaderSpan(source,name){
+    const quote=String.fromCharCode(96);
+    const lead=name+': '+quote;
+    const tail=name==='display'?quote+'\n  };':quote+',\n    '+(name==='seed'?'splat':'blur')+':';
+    const start=source.indexOf(lead),end=source.indexOf(tail,start+lead.length);
+    if(start<0 || end<0 || source.indexOf(lead,start+1)>=0)
+      throw new Error(`${name} shader boundary changed`);
+    return {start:start+lead.length,end};
+  }
+  function replaceShader(source,name,body){
+    const {start,end}=shaderSpan(source,name);
+    return source.slice(0,start)+body+source.slice(end);
+  }
+  function oneReplace(source,before,after,label){
+    if(source.split(before).length!==2)throw new Error(`${label} display anchor changed`);
+    return source.replace(before,after);
+  }
+  function noAmbient(source){
+    const needle='phase:lightPhase,amount:1.5,field:0';
+    if(source.split(needle).length!==2)throw new Error('Ambient test hook changed');
+    return source.replace(needle,'phase:lightPhase,amount:0,field:0');
+  }
+  function capture(label,age){
+    scene.render();
+    const gl=canvas.getContext('webgl2'),data=new Uint8Array(canvas.width*canvas.height*4);
+    gl.readPixels(0,0,canvas.width,canvas.height,gl.RGBA,gl.UNSIGNED_BYTE,data);
+    let total=0,lit=0,peak=0;
+    for(let i=0;i<data.length;i+=4){
+      const l=.2126*data[i]+.7152*data[i+1]+.0722*data[i+2];
+      total+=l;lit+=l>24;peak=Math.max(peak,l);
+    }
+    const id=`${label}-${age}`;
+    document.getElementById(id).src=canvas.toDataURL('image/png');
+    document.getElementById(`caption-${id}`).textContent=
+      `${canvas.dataset.frames} steps · mean ${(total/(data.length/4)).toFixed(1)} · lit ${lit} · peak ${peak.toFixed(0)}`;
+    if(gl.getError()!==gl.NO_ERROR)throw new Error(`${id}: WebGL error`);
+    if(age==='40s' && peak>20)throw new Error(`${label}: residual lighting remains after the fade (${peak.toFixed(1)})`);
+  }
+  function run(label){
+    const rect=canvas.getBoundingClientRect(),clock=performance.now();
+    scene.setPaused(false);
+    for(let i=0;i<=40;i++){
+      const t=i/40,x=.16+.68*t,y=.5+.22*Math.sin(2*Math.PI*t);
+      // The renderer stirs only while the button is held: press, then 40 held moves.
+      canvas.dispatchEvent(new PointerEvent(i?'pointermove':'pointerdown',{
+        pointerId:1,pointerType:'mouse',isPrimary:true,button:i?-1:0,buttons:1,
+        clientX:rect.left+x*rect.width,clientY:rect.top+y*rect.height,bubbles:true
+      }));
+      if(i>0)advance(clock+i*1000/30);
+    }
+    canvas.dispatchEvent(new PointerEvent('pointerup',{pointerId:1,pointerType:'mouse',isPrimary:true,button:0,buttons:0,bubbles:true}));
+    capture(label,'fresh');
+    for(const [age,target] of ages.slice(1)){
+      for(let i=Number(canvas.dataset.frames)+1;i<=target;i++)advance(clock+i*1000/30);
+      capture(label,age);
+    }
+    scene.setPaused(true);
+    // One press vortex plus 40 stroke segments.
+    if(Number(canvas.dataset.interactions)!==41 || Number(canvas.dataset.frames)!==1240)
+      throw new Error(`${label}: gesture or frame count drifted`);
+  }
+  try{
+    for(const [age] of ages){
+      const label=age==='fresh'?'Fresh':`${age} coast`;
+      grid.insertAdjacentHTML('beforeend',`<div class="age">${label}</div><figure><img id="left-${age}" alt="Baseline at ${label}"><figcaption id="caption-left-${age}">Pending</figcaption></figure><figure><img id="right-${age}" alt="Candidate at ${label}"><figcaption id="caption-right-${age}">Pending</figcaption></figure>`);
+    }
+    const response=await fetch('../studies/fluid-prototype.js',{cache:'no-store'});
+    if(!response.ok)throw new Error(`Renderer fetch failed: ${response.status}`);
+    const production=await response.text();
+    const seed=document.getElementById('frozen-seed').textContent.trim();
+    const bloom=document.getElementById('frozen-bloom').textContent.trim();
+    const display=document.getElementById('frozen-display').textContent.trim();
+    if(!seed.includes('float emission=4.0+3.0*smoothstep(.09,.28,density)') || !bloom.includes('max(c-vec3(0.30),0.0)'))
+      throw new Error('Frozen shader baseline changed');
+    const baseline=replaceShader(replaceShader(replaceShader(production,'seed',seed),'bloom',bloom),'display',display);
+    let variants;
+    if(opticsMode){
+      document.getElementById('left-heading').textContent='Frozen display baseline';
+      document.getElementById('right-heading').textContent='Slope-relative reflection';
+      document.getElementById('description').textContent='Matched seed 347 and S gesture, with ambient sheets disabled in this diagnostic. The candidate changes only the Glass reflection normal, Fresnel term, and additive coverage; transmission and local material support remain unchanged.';
+      const {start,end}=shaderSpan(baseline,'display');
+      let optics=baseline.slice(start,end);
+      optics=oneReplace(optics,'          float fresnel=.04+.96*pow(1.0-normal.z,5.0);\n','', 'original Fresnel');
+      optics=oneReplace(optics,'          vec3 reflected=reflect(vec3(0,0,-1),normal);',
+        '          vec3 reflectionNormal=normalize(vec3(-slope*.12*max(1.0,.18/max(thickness,.03)),1.0));\n'+
+        '          vec3 reflected=reflect(vec3(0,0,-1),reflectionNormal);\n'+
+        '          float reflectionFresnel=.04+.96*pow(1.0-reflectionNormal.z,5.0);\n'+
+        '          float reflectionCoverage=1.0-exp(-pow(thickness/.045,2.0));', 'reflection normal');
+      optics=oneReplace(optics,'          color+=coverage*reflectionSupport*fresnel*reflection;',
+        '          color+=reflectionCoverage*reflectionSupport*reflectionFresnel*reflection;', 'reflection coverage');
+      variants=[['left',baseline],['right',replaceShader(baseline,'display',optics)]];
+    }else if(glowMode){
+      document.getElementById('left-heading').textContent='Current threshold bloom';
+      document.getElementById('right-heading').textContent='Linear Glass bloom';
+      document.getElementById('description').textContent='Matched seed 347 and S gesture, with ambient sheets disabled in this diagnostic. Only the bloom shader changes: current hard threshold versus test-only linear half-strength Glass bloom.';
+      const {start,end}=shaderSpan(baseline,'bloom');
+      const liveBloom=baseline.slice(start,end);
+      const threshold='outColor = vec4(max(c-vec3(0.30),0.0),1);';
+      if(liveBloom.split(threshold).length!==2)throw new Error('Live bloom threshold changed');
+      const linear=liveBloom.replace(threshold,'outColor = vec4(c*0.5,1);');
+      variants=[['left',baseline],['right',replaceShader(baseline,'bloom',linear)]];
+    }else variants=[['left',baseline],['right',production]];
+    for(const [label,source] of variants){
+      status.textContent=`Rendering ${label} through 40 s…`;
+      pending.clear();scene=factory(noAmbient(source)).create(canvas,{paused:true,ambient:false,seed:347});
+      run(label);scene.dispose();scene=null;
+    }
+    status.textContent='Matched comparison complete.';status.dataset.state='passed';
+    results.textContent='PASS ten snapshots · 1240 steps per variant · no residual light at 40 s · ambient sheets disabled · one reused WebGL canvas';
+    window.__fluidLuminousFadeResult={state:'passed',mode:opticsMode?'optics':glowMode?'glow':'candidate',snapshots:10,steps:1240};
+  }catch(error){
+    status.textContent=`Comparison failed: ${error.message}`;status.dataset.state='failed';
+    results.textContent=error.stack||String(error);
+    window.__fluidLuminousFadeResult={state:'failed',error:String(error)};
+  }finally{scene?.dispose();window.requestAnimationFrame=nativeRAF;window.cancelAnimationFrame=nativeCancel;}
+})();
+</script>
+</html>

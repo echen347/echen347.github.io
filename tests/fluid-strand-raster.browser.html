@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fluid strand raster comparison</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #071015; color: #e6eff1; font: 13px/1.5 system-ui; }
+  header { width: 560px; padding: 10px 12px; }
+  label { margin-right: 8px; }
+  select { padding: 5px; background: #17242b; color: inherit; border: 1px solid #53636b; }
+  p { margin: 5px 0 0; }
+  #scene { display: block; width: 560px; height: 780px; pointer-events: none; }
+  body[data-result="fail"] #status { color: #ff9b91; }
+</style>
+<header>
+  <label for="variant">Strand diagnostic</label>
+  <select id="variant">
+    <option value="current">Before</option>
+    <option value="onepath">One-path transmission</option>
+    <option value="resolution">Canvas-resolution composition</option>
+    <option value="noturbulence">No phase turbulence</option>
+    <option value="cubic">Cubic deformation sampling</option>
+    <option value="contiguous">Contiguous deformation blur</option>
+    <option value="combined">Corrected (combined)</option>
+  </select>
+  <label><input id="stroke" type="checkbox"> Cursor stroke</label>
+  <label for="elapsed">Time</label>
+  <select id="elapsed">
+    <option value="0">0 s</option>
+    <option value="2">2 s</option>
+    <option value="10">10 s</option>
+    <option value="30">30 s</option>
+  </select>
+  <p id="description"></p>
+  <p>Fixed 1/60-second simulation ticks. Intermediate display draws are skipped; the final frame uses the full rendering path.</p>
+  <p id="status" role="status">Loading renderer…</p>
+</header>
+<canvas id="scene" aria-label="Frozen fluid comparison" tabindex="-1"></canvas>
+<script>
+(async () => {
+  const canvas = document.getElementById('scene'), select = document.getElementById('variant');
+  const elapsed = document.getElementById('elapsed');
+  const stroke = document.getElementById('stroke');
+  const status = document.getElementById('status'), description = document.getElementById('description');
+  const explanations = {
+    current: 'Before correction: dye-resolution light, bilinear deformation, and stretched smoothing. Seed 1949011526.',
+    onepath: 'One transmitted sample; matched first-order displacement and absorption. All other lighting stays active.',
+    resolution: 'Only the light-composition raster matches the display. Fluid and optical-flow grids stay unchanged.',
+    noturbulence: 'Only phase turbulence is removed. Broad curvature, brightness variation, refraction, and glow stay active.',
+    cubic: 'Only the seed shader samples its deformation map with four-tap cubic B-spline reconstruction.',
+    contiguous: 'Only the deformation smoothing uses contiguous wideBlur taps at one solver texel per step.',
+    combined: 'Corrected: canvas-resolution composition, cubic deformation sampling, and contiguous deformation smoothing.'
+  };
+  let scene, source, generation = 0;
+  function replaceOnce(text, before, after) {
+    if (text.split(before).length !== 2) throw new Error('Replacement did not match once: ' + before);
+    return text.replace(before, after);
+  }
+  function fullResolution(text) {
+    let full = replaceOnce(text, 'composition=target(dyeWidth,dyeHeight);',
+      'composition=target(size.width,size.height);');
+    full = replaceOnce(full,
+      "use('bloom',{dye:0,glass:material==='glass'?1:0,texel:[1/dyeWidth,1/dyeHeight]});",
+      "use('bloom',{dye:0,glass:material==='glass'?1:0,texel:[1/composition.width,1/composition.height]});");
+    return replaceOnce(full,
+      "texel:[1/dyeWidth,1/dyeHeight],glass:material==='glass'?1:0,glowStrength:tuning.glowStrength});",
+      "texel:[1/composition.width,1/composition.height],glass:material==='glass'?1:0,glowStrength:tuning.glowStrength});");
+  }
+  const cubicShiftHelper = `vec2 opticalShift(vec2 point) {
+        vec2 texel=1.0/vec2(textureSize(deformation,0));
+        vec2 cell=point/texel-.5, base=floor(cell), f=fract(cell);
+        vec2 f2=f*f, f3=f2*f;
+        vec2 w0=(1.0-3.0*f+3.0*f2-f3)/6.0;
+        vec2 w1=(4.0-6.0*f2+3.0*f3)/6.0;
+        vec2 w2=(1.0+3.0*f+3.0*f2-3.0*f3)/6.0;
+        vec2 w3=f3/6.0;
+        vec2 g0=w0+w1, g1=w2+w3;
+        vec2 p0=(base-.5+w1/g0)*texel;
+        vec2 p1=(base+1.5+w3/g1)*texel;
+        return mix(mix(texture(deformation,p0).xy,texture(deformation,vec2(p1.x,p0.y)).xy,g1.x),
+          mix(texture(deformation,vec2(p0.x,p1.y)).xy,texture(deformation,p1).xy,g1.x),g1.y);
+      }
+      `;
+  function cubicDeformation(text) {
+    const withHelper = replaceOnce(text, 'float hash(vec2 p) {', cubicShiftHelper + 'float hash(vec2 p) {');
+    return replaceOnce(withHelper, 'vec2 shift=warp*texture(deformation,uv).xy;',
+      'vec2 shift=warp*opticalShift(uv);');
+  }
+  function contiguousDeformation(text) {
+    const horizontal = replaceOnce(text,
+      "bindTexture(0,deformation.read); use('blur',{source:0,offset:[4/simWidth,0]}); draw(opticalB);",
+      "bindTexture(0,deformation.read); use('wideBlur',{source:0,offset:[1/simWidth,0]}); draw(opticalB);");
+    return replaceOnce(horizontal,
+      "bindTexture(0,opticalB); use('blur',{source:0,offset:[0,4/simHeight]}); draw(opticalA);",
+      "bindTexture(0,opticalB); use('wideBlur',{source:0,offset:[0,1/simHeight]}); draw(opticalA);");
+  }
+  function beforeCorrection(text) {
+    if (!text.includes('vec2 opticalShift(vec2 point) {')) return text;
+    let previous = replaceOnce(text, cubicShiftHelper, '');
+    previous = replaceOnce(previous, 'vec2 shift=warp*opticalShift(uv);',
+      'vec2 shift=warp*texture(deformation,uv).xy;');
+    previous = replaceOnce(previous, 'composition=target(size.width,size.height);',
+      'composition=target(dyeWidth,dyeHeight);');
+    previous = replaceOnce(previous,
+      "use('bloom',{dye:0,glass:material==='glass'?1:0,texel:[1/composition.width,1/composition.height]});",
+      "use('bloom',{dye:0,glass:material==='glass'?1:0,texel:[1/dyeWidth,1/dyeHeight]});");
+    previous = replaceOnce(previous,
+      "texel:[1/composition.width,1/composition.height],glass:material==='glass'?1:0,glowStrength:tuning.glowStrength});",
+      "texel:[1/dyeWidth,1/dyeHeight],glass:material==='glass'?1:0,glowStrength:tuning.glowStrength});");
+    previous = replaceOnce(previous,
+      "bindTexture(0,deformation.read); use('wideBlur',{source:0,offset:[1/simWidth,0]}); draw(opticalB);",
+      "bindTexture(0,deformation.read); use('blur',{source:0,offset:[4/simWidth,0]}); draw(opticalB);");
+    return replaceOnce(previous,
+      "bindTexture(0,opticalB); use('wideBlur',{source:0,offset:[0,1/simHeight]}); draw(opticalA);",
+      "bindTexture(0,opticalB); use('blur',{source:0,offset:[0,4/simHeight]}); draw(opticalA);");
+  }
+  function variantSource(name) {
+    if (name === 'onepath') {
+      const oneShift = replaceOnce(source,
+        'vec2 shift=normal.xy*(.012+.010*thickness)*coverage*surfaceTexel/shortTexel;',
+        'vec2 shift=normal.xy*(.012+.010*thickness)*coverage*surfaceTexel/shortTexel*(.58*coverage);');
+      return replaceOnce(oneShift,
+        'color=mix(pigment,transmitted*absorption,.58*coverage);',
+        'color=transmitted*mix(vec3(1.0),absorption,.58*coverage);');
+    }
+    if (name === 'resolution') return fullResolution(source);
+    if (name === 'cubic') return cubicDeformation(source);
+    if (name === 'contiguous') return contiguousDeformation(source);
+    if (name === 'combined') return contiguousDeformation(cubicDeformation(fullResolution(source)));
+    if (name === 'noturbulence') return replaceOnce(source,
+      'float strand=(flowSpeed>0.0?q.y-bend:cross)*waveB.y+sin(q.x*8.0+curveIndex)*5.0+turbulence*9.0;',
+      'float strand=(flowSpeed>0.0?q.y-bend:cross)*waveB.y+sin(q.x*8.0+curveIndex)*5.0;');
+    if (name !== 'current') throw new Error('Unknown comparison');
+    return source;
+  }
+  async function renderVariant(name, seconds, withStroke) {
+    const run = ++generation;
+    scene?.dispose(); scene = null;
+    document.body.dataset.result = 'running';
+    description.textContent = explanations[name];
+    const url = new URL(location.href); url.searchParams.set('case', name); url.searchParams.set('seconds', seconds);
+    if (withStroke) url.searchParams.set('stroke', '1'); else url.searchParams.delete('stroke');
+    history.replaceState(null, '', url);
+    try {
+      let clock = 0, serial = 0;
+      const pending = new Map();
+      const code = replaceOnce(variantSource(name),
+        "frames++; canvas.dataset.frames=String(frames);\n      render(); schedule();",
+        "frames++; canvas.dataset.frames=String(frames);\n      schedule();");
+      const create = new Function('requestAnimationFrame', 'cancelAnimationFrame', 'performance',
+        code + '\nreturn window.FluidPrototype.create;')(
+          callback => { const id = ++serial; pending.set(id, callback); return id; },
+          id => pending.delete(id), { now: () => clock });
+      scene = create(canvas, { randomized: true, interactive: withStroke, seed: 1949011526, paused: true });
+      const active = scene, totalFrames = seconds * 60;
+      if (totalFrames > 0 || withStroke) active.setPaused(false);
+      if (withStroke) {
+        const rect = canvas.getBoundingClientRect();
+        for (let i = 0; i <= 40; i++) {
+          const t = i / 40;
+          canvas.dispatchEvent(new PointerEvent('pointermove', { pointerId: 1, pointerType: 'mouse',
+            clientX: rect.left + rect.width * (.12 + .76 * t),
+            clientY: rect.top + rect.height * (.5 + .18 * Math.sin(2 * Math.PI * t)) }));
+        }
+        canvas.dispatchEvent(new PointerEvent('pointerleave', { pointerId: 1, pointerType: 'mouse' }));
+      }
+      for (let frame = 1; frame <= totalFrames; frame++) {
+        if (run !== generation) return;
+        if (pending.size !== 1) throw new Error('Expected one scheduled frame at step ' + frame);
+        const [[id, callback]] = pending.entries(); pending.delete(id);
+        clock = frame * 1000 / 60;
+        callback(clock);
+        if (frame % 30 === 0 || frame === totalFrames) {
+          status.textContent = 'Rendering ' + seconds + ' s · ' + canvas.dataset.frames + ' / ' + totalFrames + ' frames';
+          await new Promise(resolve => setTimeout(resolve, 0));
+        }
+      }
+      if (run !== generation) return;
+      active.setPaused(true);
+      active.render();
+      const gl = canvas.getContext('webgl2');
+      const expectedStrokes = withStroke ? 40 : 0;
+      if (canvas.dataset.state !== 'ready' || Number(canvas.dataset.frames) !== totalFrames || Number(canvas.dataset.interactions) !== expectedStrokes)
+        throw new Error('Deterministic frame or interaction count differs');
+      if (pending.size !== 0 || canvas.dataset.paused !== 'true') throw new Error('Scene did not pause after sampling');
+      if (gl.getError() !== gl.NO_ERROR) throw new Error('WebGL error');
+      status.textContent = 'Ready · ' + seconds + ' s · 560 × 780 CSS · ' + canvas.width + ' × ' + canvas.height +
+        ' raster · ' + canvas.dataset.frames + ' frames · ' + canvas.dataset.interactions + ' stroke segments';
+      document.body.dataset.result = 'pass';
+      document.body.dataset.variant = name;
+      document.body.dataset.seconds = String(seconds);
+      document.body.dataset.stroke = String(withStroke);
+    } catch (error) {
+      if (run !== generation) return;
+      scene?.dispose(); scene = null;
+      status.textContent = 'FAIL · ' + error.message;
+      document.body.dataset.result = 'fail';
+    }
+  }
+  try {
+    const response = await fetch('../studies/fluid-prototype.js', { cache: 'no-store' });
+    if (!response.ok) throw new Error('Production renderer did not load');
+    source = beforeCorrection(await response.text());
+    const query = new URLSearchParams(location.search), requested = query.get('case');
+    select.value = Object.hasOwn(explanations, requested) ? requested : 'current';
+    const seconds = Number(query.get('seconds'));
+    elapsed.value = String([0, 2, 10, 30].includes(seconds) ? seconds : 0);
+    stroke.checked = query.get('stroke') === '1';
+    const update = () => renderVariant(select.value, Number(elapsed.value), stroke.checked);
+    select.addEventListener('change', update);
+    elapsed.addEventListener('change', update);
+    stroke.addEventListener('change', update);
+    update();
+  } catch (error) {
+    status.textContent = 'FAIL · ' + error.message;
+    document.body.dataset.result = 'fail';
+  }
+  window.addEventListener('pagehide', () => { generation++; scene?.dispose(); });
+})();
+</script>
+</html>

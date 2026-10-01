@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Fluid deformation checks</title>
+<style>
+  body { background: #101318; color: #dcecef; font: 14px/1.6 system-ui; padding: 24px; }
+  pre { white-space: pre-wrap; }
+</style>
+<h1>Fluid deformation checks</h1>
+<p>The production shaders run against controlled floating-point textures.</p>
+<pre id="results">Running…</pre>
+<script>
+(async () => {
+  const output = document.getElementById('results');
+  const lines = [];
+  let passed = 0, total = 0;
+  function check(ok, label) {
+    total++;
+    passed += Number(ok);
+    lines.push((ok ? 'PASS ' : 'FAIL ') + label);
+  }
+  const canvas = document.createElement('canvas');
+  const gl = canvas.getContext('webgl2');
+  try {
+    if (!gl || !gl.getExtension('EXT_color_buffer_float')) throw new Error('Floating-point WebGL2 unavailable');
+    const response = await fetch('../studies/fluid-prototype.js', { cache: 'no-store' });
+    if (!response.ok) throw new Error('Production shader source unavailable');
+    const source = await response.text();
+    const vertex = source.match(/const VERTEX = `([\s\S]*?)`;/)?.[1];
+    const header = source.match(/const HEADER = `([\s\S]*?)`;/)?.[1];
+    const deformation = source.match(/deformation:\s*`([\s\S]*?)`\s*,/)?.[1];
+    const seed = source.match(/seed:\s*`([\s\S]*?)`\s*,/)?.[1];
+    if (!vertex || !header || !deformation || !seed) throw new Error('Production deformation or seed shader unavailable');
+    function compile(type, code) {
+      const shader = gl.createShader(type);
+      gl.shaderSource(shader, code);
+      gl.compileShader(shader);
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(shader));
+      return shader;
+    }
+    function program(body) {
+      const shader = gl.createProgram();
+      const v = compile(gl.VERTEX_SHADER, vertex);
+      const f = compile(gl.FRAGMENT_SHADER, header + body);
+      gl.attachShader(shader, v);
+      gl.attachShader(shader, f);
+      gl.linkProgram(shader);
+      gl.deleteShader(v);
+      gl.deleteShader(f);
+      if (!gl.getProgramParameter(shader, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(shader));
+      return shader;
+    }
+    function texture(width, height, make) {
+      const value = gl.createTexture();
+      const data = new Float32Array(width * height * 4);
+      for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) data.set(make(x, y), 4 * (y * width + x));
+      gl.bindTexture(gl.TEXTURE_2D, value);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, width, height, 0, gl.RGBA, gl.FLOAT, data);
+      return value;
+    }
+    function target(width, height) {
+      const tex = texture(width, height, () => [0, 0, 0, 1]);
+      const framebuffer = gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+      if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error('Floating-point framebuffer incomplete');
+      return { tex, framebuffer, width, height };
+    }
+    function uniform(programValue, name, value) {
+      const place = gl.getUniformLocation(programValue, name);
+      if (place === null) return;
+      if (Array.isArray(value) && value.length === 3) gl.uniform3f(place, value[0], value[1], value[2]);
+      else if (Array.isArray(value)) gl.uniform2f(place, value[0], value[1]);
+      else gl.uniform1f(place, value);
+    }
+    function bind(programValue, name, slot, tex) {
+      gl.activeTexture(gl.TEXTURE0 + slot);
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      const place = gl.getUniformLocation(programValue, name);
+      if (place !== null) gl.uniform1i(place, slot);
+    }
+    function drawTo(targetValue) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, targetValue.framebuffer);
+      gl.viewport(0, 0, targetValue.width, targetValue.height);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
+    function pixel(targetValue) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, targetValue.framebuffer);
+      const rgba = new Float32Array(4);
+      gl.readPixels(Math.floor(targetValue.width / 2), Math.floor(targetValue.height / 2), 1, 1, gl.RGBA, gl.FLOAT, rgba);
+      return rgba;
+    }
+    const deformationProgram = program(deformation);
+    const seedProgram = program(seed);
+    gl.bindVertexArray(gl.createVertexArray());
+    const width = 64, height = 96;
+    const zero = texture(width, height, () => [0, 0, 0, 1]);
+    const xFlow = texture(width, height, () => [16, 0, 0, 1]);
+    const yFlow = texture(width, height, () => [0, 16, 0, 1]);
+    const outA = target(width, height), outB = target(width, height);
+    function step(from, flow, to, aspect = 2 / 3) {
+      gl.useProgram(deformationProgram);
+      bind(deformationProgram, 'source', 0, from);
+      bind(deformationProgram, 'velocity', 1, flow);
+      uniform(deformationProgram, 'texel', [1 / width, 1 / height]);
+      uniform(deformationProgram, 'dt', .1);
+      uniform(deformationProgram, 'aspect', aspect);
+      // Legacy uniforms keep the prior shader finite during the RED run.
+      // The carried-coordinate shader ignores both locations.
+      uniform(deformationProgram, 'relaxation', 2);
+      uniform(deformationProgram, 'speedLimit', 1);
+      drawTo(to);
+      return pixel(to);
+    }
+    // Backward sampling moves 0.1 * 16 / 64 = 0.025 UV units per step.
+    // A constant zero source therefore receives -0.025 short-axis displacement.
+    const first = step(zero, xFlow, outA);
+    check(Math.abs(first[0] + .025) < .001 && Math.abs(first[1]) < .001,
+      'Positive horizontal flow creates negative inverse displacement: ' + first[0].toFixed(5));
+    const second = step(outA.tex, xFlow, outB);
+    check(Math.abs(second[0] + .050) < .001,
+      'A second flow step accumulates carried displacement: ' + second[0].toFixed(5));
+    let carried = outB, coast = second;
+    for (let i = 0; i < 20; i++) {
+      const next = carried === outA ? outB : outA;
+      coast = step(carried.tex, zero, next);
+      carried = next;
+    }
+    check(Math.abs(coast[0] - second[0]) < .001,
+      'Twenty zero-flow steps preserve carried displacement without restoration: ' + coast[0].toFixed(5));
+    const portraitY = step(zero, yFlow, outB);
+    check(Math.abs(portraitY[1] + .025) < .001 && Math.abs(portraitY[0]) < .001,
+      'Portrait aspect scales vertical flow into the same short-axis units: ' + portraitY[1].toFixed(5));
+    const sourceGradient = texture(width, height, (x) => [x / width * .1, 0, 0, 1]);
+    const carriedGradient = step(sourceGradient, xFlow, outA);
+    const center = (Math.floor(width / 2) + .5) / width;
+    const back = center - .1 * 16 / width;
+    const interpolatedGradient = (back * width - .5) / width * .1;
+    const expectedGradient = interpolatedGradient - .025;
+    check(Math.abs(carriedGradient[0] - expectedGradient) < .001,
+      'Spatial deformation samples the previous field upstream: ' + carriedGradient[0].toFixed(5) + ' (expected ' + expectedGradient.toFixed(5) + ')');
+    const extremePositive = texture(width, height, () => [1024, 0, 0, 1]);
+    const extremeNegative = texture(width, height, () => [-1024, 0, 0, 1]);
+    const leftBound = step(zero, extremePositive, outA);
+    const rightBound = step(zero, extremeNegative, outB);
+    const materialAtLeft = center + leftBound[0];
+    const materialAtRight = center + rightBound[0];
+    check(Math.abs(materialAtLeft - .5 / width) < .002 &&
+      Math.abs(materialAtRight - (1 - .5 / width)) < .002,
+      'Extreme flow keeps material coordinates inside the initial domain: ' + materialAtLeft.toFixed(5) + ', ' + materialAtRight.toFixed(5));
+    const imageSize = 128;
+    const black = texture(imageSize, imageSize, () => [0, 0, 0, 1]);
+    const noShift = texture(imageSize, imageSize, () => [0, 0, 0, 1]);
+    const shift = texture(imageSize, imageSize, () => [-.08, 0, 0, 1]);
+    const seedTarget = target(imageSize, imageSize);
+    const stockStyle = { waveA: [-.19, 1, 1], waveB: [.09, 920, 1], flowSpeed: 0,
+      tintA: [.045, .31, .56], tintB: [1, .43, .12], tintMist: [.54, .72, .82] };
+    function seedImage(deformationTexture) {
+      gl.useProgram(seedProgram);
+      bind(seedProgram, 'source', 0, black);
+      bind(seedProgram, 'deformation', 1, deformationTexture);
+      bind(seedProgram, 'velocity', 2, black);
+      uniform(seedProgram, 'flowTexel', [1 / imageSize, 1 / imageSize]);
+      uniform(seedProgram, 'warp', 1);
+      uniform(seedProgram, 'aspect', 1);
+      uniform(seedProgram, 'phase', .37);
+      uniform(seedProgram, 'amount', 1.5);
+      // The default lightStyle from chooseComposition(). Unset vec3 uniforms read as
+      // zero, and waveB.z = 0 gives every strand zero width: a black image.
+      for (const [name, value] of Object.entries(stockStyle)) uniform(seedProgram, name, value);
+      const fieldLocation = gl.getUniformLocation(seedProgram, 'field');
+      if (fieldLocation !== null) gl.uniform1i(fieldLocation, 0);
+      drawTo(seedTarget);
+      const values = new Float32Array(imageSize * imageSize * 4);
+      gl.readPixels(0, 0, imageSize, imageSize, gl.RGBA, gl.FLOAT, values);
+      return values;
+    }
+    const staticLight = seedImage(noShift);
+    const carriedLight = seedImage(shift);
+    let lightDifference = 0;
+    for (let i = 0; i < staticLight.length; i += 4) {
+      lightDifference += Math.abs(staticLight[i] - carriedLight[i]);
+      lightDifference += Math.abs(staticLight[i + 1] - carriedLight[i + 1]);
+      lightDifference += Math.abs(staticLight[i + 2] - carriedLight[i + 2]);
+    }
+    lightDifference /= imageSize * imageSize * 3;
+    let staticMean = 0;
+    for (let i = 0; i < staticLight.length; i += 4) staticMean += staticLight[i] + staticLight[i + 1] + staticLight[i + 2];
+    staticMean /= imageSize * imageSize * 3;
+    check(staticMean > .01, 'The stock light style lights the seed image: mean RGB ' + staticMean.toFixed(5));
+    check(lightDifference > .001,
+      'Seed light follows carried deformation even with zero velocity: mean RGB change ' + lightDifference.toFixed(5));
+    check(gl.getError() === gl.NO_ERROR, 'All deformation and seed draws have no WebGL errors');
+  } catch (error) {
+    check(false, error.message);
+  }
+  gl?.getExtension('WEBGL_lose_context')?.loseContext();
+  output.textContent = lines.join('\n') + '\n' + passed + '/' + total + ' passed';
+  output.dataset.state = passed === total ? 'passed' : 'failed';
+})();
+</script>
+</html>

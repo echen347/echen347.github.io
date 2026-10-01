@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Along-strand light streaming checks</title>
+<style>
+  body { margin: 24px; background: #071015; color: #e6eff1; font: 15px/1.6 system-ui; }
+  canvas { width: 320px; height: 200px; }
+  [data-pass="false"] { color: #ff9b91; }
+</style>
+<h1>Along-strand light streaming checks</h1>
+<p id="status" role="status">Preparing shader probes…</p>
+<ol id="checks"></ol>
+<canvas aria-label="Light streaming shader probe"></canvas>
+<script>
+(async () => {
+  const canvas = document.querySelector('canvas'), status = document.getElementById('status');
+  const gl = canvas.getContext('webgl2'), shaders = [];
+  let failures = 0, scene, program, vao, framebuffer, outputTexture, inputTexture;
+  function check(pass, label) {
+    const item = document.createElement('li'); item.dataset.pass = String(pass);
+    item.textContent = (pass ? 'PASS · ' : 'FAIL · ') + label;
+    document.getElementById('checks').append(item); if (!pass) failures++;
+  }
+  function replaceOnce(source, before, after) {
+    if (source.split(before).length !== 2) throw new Error('Shader probe anchor did not match once');
+    return source.replace(before, after);
+  }
+  function compile(type, source) {
+    const shader = gl.createShader(type); shaders.push(shader);
+    gl.shaderSource(shader, source); gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(shader));
+    return shader;
+  }
+  try {
+    if (!gl) throw new Error('WebGL2 unavailable');
+    const response = await fetch('../studies/fluid-prototype.js', { cache: 'no-store' });
+    if (!response.ok) throw new Error('Production renderer did not load');
+    const source = await response.text();
+    let vertexSource, seedSource, uniforms;
+    const originalSource = gl.shaderSource.bind(gl), originalDraw = gl.drawArrays.bind(gl);
+    gl.shaderSource = (shader, code) => {
+      if (code.includes('gl_VertexID')) vertexSource = code;
+      if (code.includes('uniform int field;')) seedSource = code;
+      originalSource(shader, code);
+    };
+    gl.drawArrays = (...args) => {
+      originalDraw(...args);
+      const active = gl.getParameter(gl.CURRENT_PROGRAM), field = gl.getUniformLocation(active, 'field');
+      if (field !== null && gl.getUniform(active, field) === 0) {
+        uniforms = Object.fromEntries(['aspect', 'phase', 'flowSpeed', 'waveA', 'waveB', 'tintA', 'tintB', 'tintMist'].map(key =>
+          [key, gl.getUniform(active, gl.getUniformLocation(active, key))]));
+      }
+    };
+    try {
+      const create = new Function(source + '\nreturn window.FluidPrototype.create;')();
+      scene = create(canvas, { randomized: true, paused: true, seed: 1949011526 });
+    } finally { gl.shaderSource = originalSource; gl.drawArrays = originalDraw; }
+    if (!vertexSource || !seedSource || !uniforms) throw new Error('Production shader capture failed');
+    scene.dispose(); scene = null;
+    let fragment = replaceOnce(seedSource, 'uniform int field;',
+      'uniform int field; uniform int probeSheet; uniform float probeScale;');
+    fragment = replaceOnce(fragment, 'p/=min(aspect,1.0);', 'p/=min(aspect,1.0); p*=probeScale;');
+    fragment = replaceOnce(fragment,
+      'light+=sheet*pulse*(tint*(.018+line*4.0)+vec3(.92,.91,.85)*core*1.5);',
+      'if(i==probeSheet) { outColor=vec4(strand,pulse,0,1); return; }');
+    program = gl.createProgram();
+    gl.attachShader(program, compile(gl.VERTEX_SHADER, vertexSource));
+    gl.attachShader(program, compile(gl.FRAGMENT_SHADER, fragment));
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program));
+    gl.useProgram(program); vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+    for (const [key, value] of Object.entries(uniforms)) {
+      const location = gl.getUniformLocation(program, key);
+      if (location === null) continue;
+      if (ArrayBuffer.isView(value)) gl.uniform3fv(location, value); else gl.uniform1f(location, value);
+    }
+    gl.uniform1i(gl.getUniformLocation(program, 'field'), 0);
+    gl.uniform1f(gl.getUniformLocation(program, 'warp'), 0);
+    const width = 256, height = 160;
+    outputTexture = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, outputTexture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, width, height, 0, gl.RGBA, gl.FLOAT, null);
+    framebuffer = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, outputTexture, 0);
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error('Float probe framebuffer incomplete');
+    inputTexture = gl.createTexture(); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, inputTexture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+    gl.uniform1i(gl.getUniformLocation(program, 'source'), 0);
+    gl.uniform1i(gl.getUniformLocation(program, 'deformation'), 0);
+    gl.viewport(0, 0, width, height);
+    function render(time, sheet = 0, scale = 1) {
+      gl.uniform1f(gl.getUniformLocation(program, 'streamTime'), time);
+      gl.uniform1i(gl.getUniformLocation(program, 'probeSheet'), sheet);
+      gl.uniform1f(gl.getUniformLocation(program, 'probeScale'), scale);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      const pixels = new Float32Array(width * height * 4);
+      gl.readPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, pixels);
+      if (gl.getError() !== gl.NO_ERROR) throw new Error('Probe readback failed');
+      return pixels;
+    }
+    const start = render(0), moving = render(6), otherSheet = render(6, 2), compressed = render(6, 0, 256);
+    let phaseError = 0, brightnessChange = 0, sheetError = 0, compressedError = 0;
+    let minimum = Infinity, maximum = -Infinity;
+    for (let i = 0; i < start.length; i += 4) {
+      phaseError = Math.max(phaseError, Math.abs(start[i] - moving[i]));
+      brightnessChange += Math.abs(start[i + 1] - moving[i + 1]);
+      sheetError = Math.max(sheetError, Math.abs(moving[i] - otherSheet[i]), Math.abs(moving[i + 1] - otherSheet[i + 1]));
+      minimum = Math.min(minimum, start[i + 1], moving[i + 1]);
+      maximum = Math.max(maximum, start[i + 1], moving[i + 1]);
+      compressedError = Math.max(compressedError, Math.abs(compressed[i + 1] - .44));
+    }
+    brightnessChange /= width * height;
+    check(phaseError < .0001, 'Streaming changes no strand positions (phase error ' + phaseError.toFixed(6) + ')');
+    check(brightnessChange > .015, 'Light moves along the stationary field (mean brightness change ' + brightnessChange.toFixed(5) + ')');
+    check(sheetError < .0001, 'Overlapping sheets share the same moving highlights');
+    check(minimum > 0 && maximum / minimum < 2, 'Light keeps a continuous floor (contrast ' + (maximum / minimum).toFixed(3) + '×)');
+    check(compressedError < .0001, 'Subpixel light texture fades to its mean instead of aliasing (error ' + compressedError.toFixed(6) + ')');
+    status.textContent = failures ? 'FAIL · ' + failures + ' checks failed' : 'PASS · All checks passed';
+    document.body.dataset.result = failures ? 'fail' : 'pass';
+    document.body.dataset.measurements = JSON.stringify({ phaseError, brightnessChange, sheetError, compressedError, minimum, maximum });
+  } catch (error) { status.textContent = 'ERROR · ' + error.message; document.body.dataset.result = 'error'; }
+  finally {
+    scene?.dispose(); for (const shader of shaders) gl.deleteShader(shader);
+    if (program) gl.deleteProgram(program); if (vao) gl.deleteVertexArray(vao);
+    if (framebuffer) gl.deleteFramebuffer(framebuffer);
+    if (outputTexture) gl.deleteTexture(outputTexture); if (inputTexture) gl.deleteTexture(inputTexture);
+  }
+})();
+</script>
+</html>

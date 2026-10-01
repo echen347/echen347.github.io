@@ -19,9 +19,9 @@
   <meta http-equiv="X-UA-Compatible" content="ie=edge">
   <title>Ethan Chen - Profile</title>
   <link rel="stylesheet" href="https://latex.vercel.app/style.css">
-  <link rel="stylesheet" href="/chaewon/chaewon.css">
+  <link rel="stylesheet" href="/chaewon/chaewon.css?v=concert-1">
   <link rel="icon" href="./favicon.ico" type="image/x-icon">
-  <script src="/chaewon/chaewon.js" defer></script>
+  <script src="/chaewon/chaewon.js?v=concert-1" defer></script>
   <style>
     body {
       min-height: 100vh;
@@ -41,8 +41,8 @@
     }
   </style>
   <link rel="stylesheet" href="./studies/site-scene.css?v=header-controls-1">
-  <script src="./studies/fluid-prototype.js?v=smooth-sampling-2" defer></script>
-  <script src="./studies/homepage-preview.js?v=first-paint-1" defer></script>
+  <script src="./studies/fluid-prototype.js?v=concert-1" defer></script>
+  <script src="./studies/homepage-preview.js?v=concert-1" defer></script>
 </head>
 
 <body data-scene-page="content" data-view="profile">
@@ -74,7 +74,10 @@
   </header>
   <main>
     <div class="bio-flex">
-      <img src="headshot-cur-cruise.JPG" alt="Ethan Chen headshot">
+      <picture>
+        <source type="image/webp" srcset="images/headshot/headshot-240.webp 240w, images/headshot/headshot-480.webp 480w, images/headshot/headshot-720.webp 720w" sizes="clamp(170px, 18vw, 240px)">
+        <img src="images/headshot/headshot-480.jpg" srcset="images/headshot/headshot-240.jpg 240w, images/headshot/headshot-480.jpg 480w, images/headshot/headshot-720.jpg 720w" sizes="clamp(170px, 18vw, 240px)" width="240" height="320" decoding="async" alt="Ethan Chen headshot">
+      </picture>
       <div class="bio-copy">
         <p>
           Hi! I'm a fourth-year undergraduate at the Georgia Institute of Technology studying Mathematics. This past
@@ -130,7 +133,7 @@
   </main>
 
   <footer>
-    <p>&copy; 2026 Ethan Chen. All rights reserved. Last updated: 9/30/2026</p>
+    <p>&copy; 2026 Ethan Chen. All rights reserved. Last updated: 10/1/2026</p>
     <p>Powered by <a href="https://latex.vercel.app/" target="_blank">LaTeX.css</a></p>
   </footer>
 </body>

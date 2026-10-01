@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Glass reflection comparison</title>
+<style>
+  :root{color-scheme:dark}
+  body{margin:0;padding:22px;background:#101318;color:#dcecef;font:14px/1.45 system-ui}
+  h1{font-size:22px;font-weight:600;margin:0 0 8px}
+  p{max-width:78ch;color:#abbec9;margin:0 0 14px}
+  #status{color:#84ccd4;margin-bottom:16px}
+  .grid{display:grid;grid-template-columns:100px repeat(2,minmax(0,1fr));gap:10px;max-width:1400px;align-items:start}
+  #comparison{overflow-x:auto}
+  .grid.layers{grid-template-columns:80px repeat(4,minmax(240px,1fr));min-width:1120px;max-width:none}
+  .grid.transport{grid-template-columns:80px repeat(4,minmax(240px,1fr));min-width:1120px;max-width:none}
+  .grid.transport img{aspect-ratio:13/20}
+  .head{font-weight:600;padding:0 2px 4px}.age{padding-top:12px;color:#abbec9}
+  figure{margin:0;background:#02060b;border:1px solid #2a3e47}
+  img{display:block;width:100%;aspect-ratio:16/9;object-fit:contain}
+  figcaption{padding:5px 8px;color:#abbec9;font:12px/1.4 ui-monospace,SFMono-Regular,monospace}
+  pre{white-space:pre-wrap;color:#abbec9;margin-top:18px}
+  #stage{position:absolute;left:-200vw;top:0;width:640px;height:360px;visibility:hidden}
+  #stage.portrait{width:390px;height:600px}
+  @media(max-width:760px){body{padding:12px}.grid{grid-template-columns:65px repeat(2,minmax(0,1fr));gap:5px}.age{font-size:12px}figcaption{font-size:10px}}
+</style>
+<h1 id="heading">Glass reflection comparison</h1>
+<p id="description">Matched seed 347 and the same 40-step S gesture. Ambient sheets are disabled in this test-only rendering to isolate the cursor wake. The left column freezes the display before edge support; the right column uses the live edge-supported highlights. Both use the same solver.</p>
+<div id="status">Preparing matched renderers…</div>
+<div id="comparison"><div class="grid" id="grid">
+  <div></div><div class="head">Before: full reflections</div><div class="head">Current: edge-supported highlights</div>
+  <div class="age">Fresh</div><figure><img id="baseline-fresh" alt="Glass before edge support, fresh stroke"><figcaption id="caption-baseline-fresh">Pending</figcaption></figure><figure><img id="current-fresh" alt="Glass with edge-supported highlights, fresh stroke"><figcaption id="caption-current-fresh">Pending</figcaption></figure>
+  <div class="age">2 s coast</div><figure><img id="baseline-2s" alt="Glass before edge support after two seconds"><figcaption id="caption-baseline-2s">Pending</figcaption></figure><figure><img id="current-2s" alt="Glass with edge-supported highlights after two seconds"><figcaption id="caption-current-2s">Pending</figcaption></figure>
+</div></div>
+<pre id="results"></pre><canvas id="stage"></canvas>
+
+<script type="text/plain" id="frozen-display">uniform sampler2D dye;
+      uniform sampler2D bloom;
+      uniform sampler2D wideBloom;
+      uniform sampler2D surface;
+      uniform vec2 texel;
+      uniform vec2 surfaceTexel;
+      uniform int glass;
+      uniform float glowStrength;
+      void main() {
+        vec3 pigment = max(texture(dye,uv).rgb,vec3(0));
+        vec3 color = pigment;
+        if (glass == 1) {
+          float thickness=max(texture(surface,uv).r,0.0);
+          float l=texture(surface,uv-vec2(surfaceTexel.x,0)).r;
+          float r=texture(surface,uv+vec2(surfaceTexel.x,0)).r;
+          float b=texture(surface,uv-vec2(0,surfaceTexel.y)).r;
+          float t=texture(surface,uv+vec2(0,surfaceTexel.y)).r;
+          float shortTexel=max(max(surfaceTexel.x,surfaceTexel.y),1e-5);
+          vec2 slope=vec2(r-l,t-b)/(2.0*shortTexel);
+          vec3 normal=normalize(vec3(-slope*.12,1.0));
+          float coverage=smoothstep(.006,.16,thickness);
+          float fresnel=.04+.96*pow(1.0-normal.z,5.0);
+
+          // Screen-space transmission through the broad surface, not the strands.
+          vec2 shift=normal.xy*(.012+.010*thickness)*coverage*surfaceTexel/shortTexel;
+          vec2 margin=texel*.5;
+          vec3 transmitted=vec3(
+            texture(dye,clamp(uv+shift*.975,margin,vec2(1)-margin)).r,
+            texture(dye,clamp(uv+shift,margin,vec2(1)-margin)).g,
+            texture(dye,clamp(uv+shift*1.025,margin,vec2(1)-margin)).b);
+          vec3 absorption=exp(-thickness*vec3(.28,.10,.04));
+          color=mix(pigment,transmitted*absorption,.58*coverage);
+          color*=1.0-.10*coverage*thickness/(.2+thickness);
+
+          // Two broad studio lights reflect as narrow moving glints on the folds.
+          vec3 reflected=reflect(vec3(0,0,-1),normal);
+          float cool=exp(-pow((reflected.x+.34)/.22,2.0)-pow((reflected.y-.58)/.65,2.0));
+          float warm=exp(-pow((reflected.x-.55)/.16,2.0)-pow((reflected.y+.30)/.60,2.0));
+          vec3 reflection=vec3(.82,.95,1.08)*3.4*cool+vec3(1.1,.64,.36)*2.6*warm;
+          color+=coverage*fresnel*reflection;
+        }
+        color=max(color-vec3(.008),vec3(0));
+        color += glowStrength*(texture(bloom,uv).rgb * .24 + texture(wideBloom,uv).rgb * .40);
+        color += vec3(.0004,.0012,.0020);
+        color = vec3(1.0)-exp(-color*1.15);
+        color = pow(color,vec3(0.454545));
+        outColor = vec4(color,1);
+      }</script>
+<script type="text/plain" id="frozen-advection">uniform sampler2D velocity;
+      uniform sampler2D source;
+      uniform vec2 texel;
+      uniform float dt;
+      uniform float dissipation;
+      void main() {
+        vec2 coord = uv - dt * texture(velocity, uv).xy * texel;
+        vec2 dx=dFdx(coord),dy=dFdy(coord),size=vec2(textureSize(source,0));
+        float footprint=max(length(dx*size),length(dy*size));
+        vec4 color=texture(source,coord);
+        // Average the mapped pixel area only where flow compresses the texture.
+        if(footprint>1.01) {
+          vec4 filtered=vec4(0);
+          for(int y=0;y<4;y++) for(int x=0;x<4;x++) {
+            vec2 offset=(vec2(float(x),float(y))+.5)/4.0-.5;
+            filtered+=texture(source,coord+dx*offset.x+dy*offset.y);
+          }
+          color=mix(color,filtered/16.0,smoothstep(1.0,1.5,footprint));
+        }
+        outColor = color / (1.0 + dissipation * dt);
+      }</script>
+<script>
+(async()=>{
+  const status=document.getElementById('status'),results=document.getElementById('results');
+  const canvas=document.getElementById('stage');
+  const layers=new URLSearchParams(location.search).get('layers')==='1';
+  const transport=new URLSearchParams(location.search).get('transport')==='1';
+  if(transport){
+    document.getElementById('heading').textContent='Portrait transport comparison';
+    document.getElementById('description').textContent=
+      'Ambient sheets on. Matched seed 347 and a fast diagonal from (100, 570) to (455, 260), scaled from a 462-by-600 viewport into 390-by-600. Forty pointer moves arrive over 20 simulation frames, followed by a two-second coast. The Glass pair differs only in high-resolution dye advection velocity lookup. The raw-dye pair bypasses composition, bloom, and Glass shading to expose transport directly.';
+    canvas.classList.add('portrait');
+    const columns=[['bilinear','Bilinear Glass'],['cubic','Cubic Glass'],
+      ['bilinear-dye','Bilinear dye, tone mapped'],['cubic-dye','Cubic dye, tone mapped']];
+    const grid=document.getElementById('grid');grid.classList.add('transport');
+    grid.innerHTML='<div></div>'+columns.map(([,title])=>`<div class="head">${title}</div>`).join('')+
+      ['fresh','2s'].map(age=>`<div class="age">${age==='fresh'?'Fresh':'2 s coast'}</div>`+
+        columns.map(([name,title])=>`<figure><img id="${name}-${age}" alt="${title}, ${age}"><figcaption id="caption-${name}-${age}">Pending</figcaption></figure>`).join('')).join('');
+  }else if(layers){
+    document.getElementById('heading').textContent='Glass light-layer diagnosis';
+    document.getElementById('description').textContent=
+      'Ambient sheets on. Matched seed 347, 40 pointer moves in 20 simulation frames, then a two-second coast. Reflection off removes only studio reflections; refraction off keeps absorption but removes shifted transmission; pointer dye off preserves cursor velocity.';
+    const columns=[['reflected','Current'],['unreflected','Reflection off'],
+      ['unrefracted','Refraction off'],['no-dye','Pointer dye off']];
+    const grid=document.getElementById('grid');grid.classList.add('layers');
+    grid.innerHTML='<div></div>'+columns.map(([,title])=>`<div class="head">${title}</div>`).join('')+
+      ['fresh','2s'].map(age=>`<div class="age">${age==='fresh'?'Fresh':'2 s coast'}</div>`+
+        columns.map(([name,title])=>`<figure><img id="${name}-${age}" alt="${title}, ${age}"><figcaption id="caption-${name}-${age}">Pending</figcaption></figure>`).join('')).join('');
+  }
+  const nativeRAF=window.requestAnimationFrame,nativeCancel=window.cancelAnimationFrame;
+  const pending=new Map(),measurements={};let nextId=1,scene,currentLabel='';
+  window.requestAnimationFrame=callback=>{const id=nextId++;pending.set(id,callback);return id;};
+  window.cancelAnimationFrame=id=>pending.delete(id);
+  function advance(now){
+    const callbacks=[...pending.values()];pending.clear();
+    if(callbacks.length!==1)throw new Error(`Expected one scheduled frame, got ${callbacks.length}`);
+    callbacks[0](now);
+  }
+  function factory(source){(0,eval)(source);return window.FluidPrototype;}
+  function noAmbientSheets(source){
+    const before='phase:lightPhase,amount:1.5,field:0';
+    if(!source.includes(before))throw new Error('Test-only ambient amount patch no longer matches');
+    return source.replace(before,'phase:lightPhase,amount:0,field:0');
+  }
+  function capture(age){
+    scene.render();
+    const gl=canvas.getContext('webgl2');
+    const data=new Uint8Array(canvas.width*canvas.height*4);
+    gl.readPixels(0,0,canvas.width,canvas.height,gl.RGBA,gl.UNSIGNED_BYTE,data);
+    let total=0,lit=0,peak=0,sumX=0,sumY=0,sumWeight=0;
+    for(let i=0;i<data.length;i+=4){
+      const luminance=.2126*data[i]+.7152*data[i+1]+.0722*data[i+2];
+      total+=luminance;peak=Math.max(peak,luminance);
+      lit+=luminance>24;
+      const weight=Math.max(luminance-4,0);
+      if(weight>0){
+        const pixel=i/4;
+        sumWeight+=weight;
+        sumX+=weight*(pixel%canvas.width+.5);
+        sumY+=weight*(canvas.height-Math.floor(pixel/canvas.width)-.5);
+      }
+    }
+    const center=sumWeight>0?[sumX/sumWeight,sumY/sumWeight]:null;
+    measurements[`${currentLabel}-${age}`]={area:lit,center};
+    document.getElementById(`${currentLabel}-${age}`).src=canvas.toDataURL('image/png');
+    document.getElementById(`caption-${currentLabel}-${age}`).textContent=
+      `${canvas.dataset.frames} steps · mean ${(total/(data.length/4)).toFixed(1)} · area ${lit} · weighted center ${center?`(${center.map(v=>v.toFixed(1)).join(', ')})`:'n/a'} · peak ${peak.toFixed(0)}`;
+    if(gl.getError()!==gl.NO_ERROR)throw new Error(`${currentLabel} ${age}: WebGL error`);
+  }
+  function exercise(){
+    const rect=canvas.getBoundingClientRect(),clock=performance.now();
+    scene.setPaused(false);
+    for(let i=0;i<=40;i++){
+      const t=i/40;
+      const x=transport ? (100+355*t)/462 : layers ? .06+.88*t : .16+.68*t;
+      const y=transport ? (570-310*t)/600 : .5+(layers ? .27 : .22)*Math.sin(2*Math.PI*t);
+      // The renderer stirs only while the button is held: press, then 40 held moves.
+      canvas.dispatchEvent(new PointerEvent(i?'pointermove':'pointerdown',{
+        pointerId:1,pointerType:'mouse',isPrimary:true,button:i?-1:0,buttons:1,
+        clientX:rect.left+x*rect.width,clientY:rect.top+y*rect.height,bubbles:true
+      }));
+      if(i>0 && (!(layers||transport) || i%2===0))advance(clock+((layers||transport)?i/2:i)*1000/30);
+    }
+    canvas.dispatchEvent(new PointerEvent('pointerup',{pointerId:1,pointerType:'mouse',isPrimary:true,button:0,buttons:0,bubbles:true}));
+    capture('fresh');
+    const firstCoast=(layers||transport)?21:41,end=(layers||transport)?80:100;
+    for(let i=firstCoast;i<=end;i++)advance(clock+i*1000/30);
+    capture('2s');
+    scene.setPaused(true);
+    // One press vortex plus 40 stroke segments.
+    if(Number(canvas.dataset.interactions)!==41 || Number(canvas.dataset.frames)!==end)
+      throw new Error(`${currentLabel}: gesture or frame count drifted`);
+  }
+  try{
+    const response=await fetch('../studies/fluid-prototype.js',{cache:'no-store'});
+    if(!response.ok)throw new Error(`Renderer fetch failed: ${response.status}`);
+    const production=await response.text();
+    const frozen=document.getElementById('frozen-display').textContent.trim();
+    const reflectLine='color+=coverage*fresnel*reflection;';
+    if(frozen.split(reflectLine).length!==2)throw new Error('Frozen reflection line missing or repeated');
+    const refractLine='color=mix(pigment,transmitted*absorption,.58*coverage);';
+    if(frozen.split(refractLine).length!==2)throw new Error('Frozen refraction line missing or repeated');
+    const displayPattern=/display: `([\s\S]*?)`\n  };/;
+    if(!displayPattern.test(production))throw new Error('Production display shader boundary changed');
+    const withDisplay=shader=>production.replace(displayPattern,()=>`display: \`${shader}\`\n  };`);
+    let variants;
+    if(transport){
+      const frozenAdvection=document.getElementById('frozen-advection').textContent.trim();
+      const advectionPattern=/advection: `([\s\S]*?)`,\n    curl:/;
+      if(!advectionPattern.test(production))throw new Error('Production advection shader boundary changed');
+      const withAdvection=(source,shader)=>source.replace(advectionPattern,
+        ()=>`advection: \`${shader}\`,\n    curl:`);
+      const rawDisplay=`uniform sampler2D dye;
+        void main() {
+          vec3 color=max(texture(dye,uv).rgb,vec3(0));
+          color=vec3(1.0)-exp(-color*1.15);
+          outColor=vec4(pow(color,vec3(.454545)),1.0);
+        }`;
+      const displayBind='bindTexture(0,composition); bindTexture(1,glowA); bindTexture(2,wideA);';
+      if(production.split(displayBind).length!==2)throw new Error('Raw dye display binding changed');
+      const rawDye=source=>source.replace(displayBind,
+        'bindTexture(0,dye.read); bindTexture(1,glowA); bindTexture(2,wideA);')
+        .replace(displayPattern,()=>`display: \`${rawDisplay}\`\n  };`);
+      const bilinear=withAdvection(production,frozenAdvection);
+      const cubic=production;
+      variants=[['bilinear',factory(bilinear),{}],['cubic',factory(cubic),{}],
+        ['bilinear-dye',factory(rawDye(bilinear)),{}],['cubic-dye',factory(rawDye(cubic)),{}]];
+    }else if(layers){
+      const reflected=factory(withDisplay(frozen));
+      variants=[['reflected',reflected,{}],
+        ['unreflected',factory(withDisplay(frozen.replace(reflectLine,'color+=vec3(0.0);'))),{}]];
+      variants.push(['unrefracted',factory(withDisplay(frozen.replace(refractLine,
+        'color=mix(pigment,pigment*absorption,.58*coverage);'))),{}]);
+      variants.push(['no-dye',reflected,{tuning:{dyeBrightness:0}}]);
+    }else{
+      variants=[['baseline',factory(noAmbientSheets(withDisplay(frozen))),{}],
+        ['current',factory(noAmbientSheets(production)),{}]];
+    }
+    for(const [label,runtime,options] of variants){
+      currentLabel=label;status.textContent=`Rendering ${label} snapshots…`;
+      pending.clear();scene=runtime.create(canvas,{paused:true,ambient:layers||transport,seed:347,...options});
+      exercise();scene.dispose();scene=null;
+    }
+    const steps=(layers||transport)?80:100;
+    status.textContent=`Comparison complete. All columns use the same ${steps} simulation steps.`;
+    status.dataset.state='passed';
+    const summary=[`PASS ${layers||transport?8:4} snapshots · one reused WebGL canvas · fixed seed · ambient sheets ${layers||transport?'on':'disabled'}`];
+    if(transport){
+      for(const age of ['fresh','2s'])for(const suffix of ['', '-dye']){
+        const a=measurements[`bilinear${suffix}-${age}`],b=measurements[`cubic${suffix}-${age}`];
+        const areaChange=100*(b.area-a.area)/Math.max(a.area,1);
+        const drift=a.center && b.center ?
+          `${Math.hypot(b.center[0]-a.center[0],b.center[1]-a.center[1]).toFixed(1)} px` : 'n/a';
+        summary.push(`${suffix?'Raw dye':'Glass'} ${age}: cubic area ${areaChange>=0?'+':''}${areaChange.toFixed(1)}% vs bilinear; centroid shift ${drift}`);
+      }
+    }
+    results.textContent=summary.join('\n');
+    window.__fluidReflectionLookResult={state:'passed',snapshots:layers||transport?8:4,steps,
+      ambientSheets:layers||transport,measurements};
+  }catch(error){
+    status.textContent=`Comparison failed: ${error.message}`;status.dataset.state='failed';
+    results.textContent=error.stack||String(error);
+    window.__fluidReflectionLookResult={state:'failed',error:String(error)};
+  }finally{scene?.dispose();window.requestAnimationFrame=nativeRAF;window.cancelAnimationFrame=nativeCancel;}
+})();
+</script>
+</html>
